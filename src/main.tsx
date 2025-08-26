@@ -13,6 +13,7 @@ import { handleServerError } from '@/utils/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
 import { ThemeProvider } from './context/theme-provider'
+import { SearchProvider } from './context/search-provider'
 // Generated Routes
 import { routeTree } from './routeTree.gen'
 // Styles
@@ -59,7 +60,8 @@ const queryClient = new QueryClient({
         }
         if (error.response?.status === 500) {
           toast.error('Internal Server Error!')
-          router.navigate({ to: '/500' })
+          // Handle error - show toast notification
+          toast.error('Server error occurred')
         }
         if (error.response?.status === 403) {
           // router.navigate("/forbidden", { replace: true });
@@ -94,7 +96,9 @@ if (!rootElement.innerHTML) {
         <ThemeProvider>
           <FontProvider>
             <DirectionProvider>
-              <RouterProvider router={router} />
+              <SearchProvider>
+                <RouterProvider router={router} />
+              </SearchProvider>
             </DirectionProvider>
           </FontProvider>
         </ThemeProvider>
