@@ -14,6 +14,7 @@ import {
   History,
   Scan
 } from 'lucide-react'
+import { CloudXLogo } from '@/assets/cloud-x-logo'
 import { cn } from '@/lib/utils'
 import { 
   Sidebar,
@@ -163,9 +164,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar {...props} className="border-r">
       <SidebarHeader className="border-b px-4 py-4">
-        <div className="flex items-center gap-2">
-          <Shield className="h-6 w-6 text-blue-600" />
-          <span className="font-bold text-lg">Cloud-X</span>
+        <div className="flex items-center justify-center">
+          <CloudXLogo className="h-8 w-auto" width={32} height={32} />
         </div>
       </SidebarHeader>
       

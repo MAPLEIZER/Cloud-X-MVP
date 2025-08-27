@@ -9,9 +9,9 @@ import {
   History,
   Search,
   Activity,
-  ShieldCheck,
 } from 'lucide-react'
 import { type SidebarData } from '../types'
+import { CloudXLogo } from '@/assets/cloud-x-logo'
 
 export const sidebarData: SidebarData = {
   user: {
@@ -22,7 +22,7 @@ export const sidebarData: SidebarData = {
   teams: [
     {
       name: 'Cloud-X Security',
-      logo: ShieldCheck,
+      logo: CloudXLogo,
       plan: 'Enterprise',
     },
   ],

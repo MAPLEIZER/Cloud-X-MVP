@@ -4,7 +4,6 @@ import { Badge } from '@/components/ui/badge'
 import { Progress } from '@/components/ui/progress'
 import { Link } from '@tanstack/react-router'
 import { 
-  Shield, 
   Activity, 
   AlertTriangle, 
   Clock, 
@@ -20,6 +19,7 @@ import {
   XCircle,
   Loader2
 } from 'lucide-react'
+import { CloudXLogo } from '@/assets/cloud-x-logo'
 import { useApp } from '@/context/app-context'
 import { ConnectionStatus } from '@/components/custom/connection-status'
 import SystemMonitor from '@/components/system-monitor'
@@ -78,10 +78,7 @@ export function Dashboard() {
         </div>
         <div className="flex items-center gap-4">
           <ConnectionStatus />
-          <div className="flex items-center gap-2">
-            <Shield className="h-5 w-5 text-blue-600" />
-            <span className="text-sm font-medium">Cloud-X Security</span>
-          </div>
+          <CloudXLogo className="h-8 w-auto" width={32} height={32} />
         </div>
       </div>
 

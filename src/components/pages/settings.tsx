@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Separator } from '@/components/ui/separator'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Settings as SettingsIcon, Save, Server, Bell, Palette, Shield } from 'lucide-react'
+import { Settings as SettingsIcon, Save, Server, Bell, Palette } from 'lucide-react'
+import { CloudXLogo } from '@/assets/cloud-x-logo'
 import { useApp } from '@/context/app-context'
 import { useTheme } from '@/context/theme-provider'
 import { toast } from 'sonner'
@@ -47,10 +48,7 @@ export function Settings() {
           <SettingsIcon className="h-6 w-6" />
           <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Shield className="h-4 w-4 text-blue-600" />
-          <span className="text-sm text-muted-foreground">Cloud-X Security</span>
-        </div>
+        <CloudXLogo className="h-6 w-auto" width={24} height={24} />
       </div>
 
       {/* API Configuration */}
