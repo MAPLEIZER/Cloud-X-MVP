@@ -315,9 +315,10 @@ def deploy_agent():
         return jsonify({'error': 'Invalid OS type'}), 400
 
     if result['status'] == 'success':
-        return jsonify({'message': 'Deployment successful', 'output': result.get('output')})
+        return jsonify({'message': 'Deployment successful'})
     else:
-        return jsonify({'error': 'Deployment failed', 'details': result}), 500
+        # Optionally, you could add a more specific message based on known safe errors
+        return jsonify({'error': 'Deployment failed', 'reason': 'An internal error occurred during deployment.'}), 500
 
 @app.route('/api/deploy/node', methods=['POST'])
 def deploy_node():
