@@ -1,0 +1,136 @@
+# .coderabbit.yaml - Configuration for CodeRabbit code review
+# Documentation: https://coderabbit.ai/docs/config
+
+# Global settings for all repositories
+version: 2
+
+# Default review configuration that applies to all files
+review:
+  # Enable or disable the review
+  enabled: true
+
+  # Configure which files to include/exclude from review
+  include_paths:
+    - "**/*.py"
+    - "**/*.js"
+    - "**/*.jsx"
+    - "**/*.ts"
+    - "**/*.tsx"
+    - "**/*.yaml"
+    - "**/*.yml"
+    - "**/*.json"
+  exclude_paths:
+    - "**/node_modules/**"
+    - "**/venv/**"
+    - "**/dist/**"
+    - "**/build/**"
+    - "**/.git/**"
+    - "**/.github/**"
+    - "**/__pycache__/**"
+
+  # Configure the review behavior
+  behavior:
+    # Auto-approve small changes (reduces noise for minor changes)
+    auto_approve:
+      enabled: true
+      max_lines_changed: 15
+      
+    # Request changes for PRs that decrease test coverage
+    require_test_coverage:
+      enabled: true
+      threshold: 80  # Minimum test coverage percentage
+      
+    # Check for security vulnerabilities
+    security_checks:
+      enabled: true
+      
+    # Check for code style issues
+    code_style:
+      enabled: true
+      tools:
+        - "eslint"
+        - "pylint"
+
+# Configuration for the AI assistant
+aissistant:
+  # Enable AI-powered code suggestions
+  enabled: true
+  
+  # Configure which files the AI should focus on
+  focus_paths:
+    - "src/**/*"
+    - "cloudx-flask-backend/**/*.py"
+    - "cloudx-security-agent/**/*"
+  
+  # Configure AI behavior
+  behavior:
+    # Suggest improvements for code quality
+    suggest_improvements: true
+    
+    # Detect potential bugs
+    detect_bugs: true
+    
+    # Check for security vulnerabilities
+    security_checks: true
+    
+    # Suggest test cases
+    suggest_tests: true
+
+# Configuration for PR updates
+update:
+  # Update PR status based on review
+  status: true
+  
+  # Add comments to the PR
+  comment: true
+  
+  # Request changes when issues are found
+  request_changes: true
+
+# Configuration for the review dashboard
+dashboard:
+  # Enable the dashboard
+  enabled: true
+  
+  # Show test coverage information
+  test_coverage: true
+  
+  # Show security issues
+  security_issues: true
+  
+  # Show code quality metrics
+  code_quality: true
+
+# Custom rules for the review process
+rules:
+  # Security rules
+  - name: Check for hardcoded secrets
+    pattern: "(password|secret|key|token|api[_-]?key|auth[_-]?token)"
+    message: "Potential hardcoded secret detected. Consider using environment variables or a secret manager."
+    level: warning
+    
+  # Code quality rules
+  - name: Check for large files
+    pattern: ".*"
+    max_size_kb: 500
+    message: "File is too large. Consider splitting it into smaller, more maintainable modules."
+    level: warning
+
+# Ignore certain files or patterns from review
+ignore:
+  - "**/*.md"  # Ignore markdown files in review
+  - "**/*.txt"  # Ignore text files
+  - "**/migrations/**"  # Ignore database migrations
+  - "**/test/**"  # Ignore test files
+  - "**/fixtures/**"  # Ignore test fixtures
+
+# Configuration for CI/CD integration
+ci:
+  # Enable integration with CI/CD pipelines
+  enabled: true
+  
+  # Require review before merging
+  require_review: true
+  
+  # Block merging if there are critical issues
+  block_on_critical: true
