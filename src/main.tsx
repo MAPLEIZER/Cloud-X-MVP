@@ -12,8 +12,8 @@ import { useAuthStore } from '@/stores/auth-store'
 import { handleServerError } from '@/utils/handle-server-error'
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
-import { ThemeProvider } from './context/theme-provider'
 import { SearchProvider } from './context/search-provider'
+import { ThemeProvider } from './context/theme-provider'
 // Generated Routes
 import { routeTree } from './routeTree.gen'
 // Styles

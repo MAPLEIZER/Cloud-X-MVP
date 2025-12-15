@@ -45,12 +45,10 @@ export function Header({ className, fixed, children, ...props }: HeaderProps) {
       >
         <SidebarTrigger variant='outline' className='max-md:scale-125' />
         <Separator orientation='vertical' className='h-6' />
-        <div className="flex flex-1 items-center justify-between">
-          <div className="flex items-center gap-4">
-            {children}
-          </div>
-          <div className="flex items-center gap-3">
-            <Search placeholder="Search Cloud-X..." />
+        <div className='flex flex-1 items-center justify-between'>
+          <div className='flex items-center gap-4'>{children}</div>
+          <div className='flex items-center gap-3'>
+            <Search placeholder='Search Cloud-X...' />
             <ThemeSwitch />
           </div>
         </div>

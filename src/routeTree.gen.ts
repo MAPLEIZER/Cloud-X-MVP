@@ -14,9 +14,16 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ProtectedRouteImport } from './routes/_protected'
 import { Route as ProtectedIndexRouteImport } from './routes/_protected/index'
 import { Route as ProtectedSettingsRouteImport } from './routes/_protected/settings'
+import { Route as ProtectedServersRouteImport } from './routes/_protected/servers'
+import { Route as ProtectedDocumentationRouteImport } from './routes/_protected/documentation'
 import { Route as ProtectedDashboardRouteImport } from './routes/_protected/dashboard'
+import { Route as ProtectedBillingRouteImport } from './routes/_protected/billing'
 import { Route as ProtectedAppsRouteImport } from './routes/_protected/apps'
+import { Route as ProtectedAccountRouteImport } from './routes/_protected/account'
+import { Route as ProtectedAppsWazuhRouteImport } from './routes/_protected/apps.wazuh'
 import { Route as ProtectedAppsNetworkRouteImport } from './routes/_protected/apps.network'
+import { Route as ProtectedAppsDownloadsRouteImport } from './routes/_protected/apps.downloads'
+import { Route as ProtectedAppsAdvancedRouteImport } from './routes/_protected/apps.advanced'
 import { Route as ProtectedAppsNetworkScanRouteImport } from './routes/_protected/apps.network.scan'
 import { Route as ProtectedAppsNetworkHistoryRouteImport } from './routes/_protected/apps.network.history'
 
@@ -44,9 +51,24 @@ const ProtectedSettingsRoute = ProtectedSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedServersRoute = ProtectedServersRouteImport.update({
+  id: '/servers',
+  path: '/servers',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedDocumentationRoute = ProtectedDocumentationRouteImport.update({
+  id: '/documentation',
+  path: '/documentation',
+  getParentRoute: () => ProtectedRoute,
+} as any)
 const ProtectedDashboardRoute = ProtectedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedBillingRoute = ProtectedBillingRouteImport.update({
+  id: '/billing',
+  path: '/billing',
   getParentRoute: () => ProtectedRoute,
 } as any)
 const ProtectedAppsRoute = ProtectedAppsRouteImport.update({
@@ -54,9 +76,29 @@ const ProtectedAppsRoute = ProtectedAppsRouteImport.update({
   path: '/apps',
   getParentRoute: () => ProtectedRoute,
 } as any)
+const ProtectedAccountRoute = ProtectedAccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => ProtectedRoute,
+} as any)
+const ProtectedAppsWazuhRoute = ProtectedAppsWazuhRouteImport.update({
+  id: '/wazuh',
+  path: '/wazuh',
+  getParentRoute: () => ProtectedAppsRoute,
+} as any)
 const ProtectedAppsNetworkRoute = ProtectedAppsNetworkRouteImport.update({
   id: '/network',
   path: '/network',
+  getParentRoute: () => ProtectedAppsRoute,
+} as any)
+const ProtectedAppsDownloadsRoute = ProtectedAppsDownloadsRouteImport.update({
+  id: '/downloads',
+  path: '/downloads',
+  getParentRoute: () => ProtectedAppsRoute,
+} as any)
+const ProtectedAppsAdvancedRoute = ProtectedAppsAdvancedRouteImport.update({
+  id: '/advanced',
+  path: '/advanced',
   getParentRoute: () => ProtectedAppsRoute,
 } as any)
 const ProtectedAppsNetworkScanRoute =
@@ -75,22 +117,36 @@ const ProtectedAppsNetworkHistoryRoute =
 export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/account': typeof ProtectedAccountRoute
   '/apps': typeof ProtectedAppsRouteWithChildren
+  '/billing': typeof ProtectedBillingRoute
   '/dashboard': typeof ProtectedDashboardRoute
+  '/documentation': typeof ProtectedDocumentationRoute
+  '/servers': typeof ProtectedServersRoute
   '/settings': typeof ProtectedSettingsRoute
   '/': typeof ProtectedIndexRoute
+  '/apps/advanced': typeof ProtectedAppsAdvancedRoute
+  '/apps/downloads': typeof ProtectedAppsDownloadsRoute
   '/apps/network': typeof ProtectedAppsNetworkRouteWithChildren
+  '/apps/wazuh': typeof ProtectedAppsWazuhRoute
   '/apps/network/history': typeof ProtectedAppsNetworkHistoryRoute
   '/apps/network/scan': typeof ProtectedAppsNetworkScanRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/account': typeof ProtectedAccountRoute
   '/apps': typeof ProtectedAppsRouteWithChildren
+  '/billing': typeof ProtectedBillingRoute
   '/dashboard': typeof ProtectedDashboardRoute
+  '/documentation': typeof ProtectedDocumentationRoute
+  '/servers': typeof ProtectedServersRoute
   '/settings': typeof ProtectedSettingsRoute
   '/': typeof ProtectedIndexRoute
+  '/apps/advanced': typeof ProtectedAppsAdvancedRoute
+  '/apps/downloads': typeof ProtectedAppsDownloadsRoute
   '/apps/network': typeof ProtectedAppsNetworkRouteWithChildren
+  '/apps/wazuh': typeof ProtectedAppsWazuhRoute
   '/apps/network/history': typeof ProtectedAppsNetworkHistoryRoute
   '/apps/network/scan': typeof ProtectedAppsNetworkScanRoute
 }
@@ -99,11 +155,18 @@ export interface FileRoutesById {
   '/_protected': typeof ProtectedRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/_protected/account': typeof ProtectedAccountRoute
   '/_protected/apps': typeof ProtectedAppsRouteWithChildren
+  '/_protected/billing': typeof ProtectedBillingRoute
   '/_protected/dashboard': typeof ProtectedDashboardRoute
+  '/_protected/documentation': typeof ProtectedDocumentationRoute
+  '/_protected/servers': typeof ProtectedServersRoute
   '/_protected/settings': typeof ProtectedSettingsRoute
   '/_protected/': typeof ProtectedIndexRoute
+  '/_protected/apps/advanced': typeof ProtectedAppsAdvancedRoute
+  '/_protected/apps/downloads': typeof ProtectedAppsDownloadsRoute
   '/_protected/apps/network': typeof ProtectedAppsNetworkRouteWithChildren
+  '/_protected/apps/wazuh': typeof ProtectedAppsWazuhRoute
   '/_protected/apps/network/history': typeof ProtectedAppsNetworkHistoryRoute
   '/_protected/apps/network/scan': typeof ProtectedAppsNetworkScanRoute
 }
@@ -112,22 +175,36 @@ export interface FileRouteTypes {
   fullPaths:
     | '/sign-in'
     | '/sign-up'
+    | '/account'
     | '/apps'
+    | '/billing'
     | '/dashboard'
+    | '/documentation'
+    | '/servers'
     | '/settings'
     | '/'
+    | '/apps/advanced'
+    | '/apps/downloads'
     | '/apps/network'
+    | '/apps/wazuh'
     | '/apps/network/history'
     | '/apps/network/scan'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/sign-in'
     | '/sign-up'
+    | '/account'
     | '/apps'
+    | '/billing'
     | '/dashboard'
+    | '/documentation'
+    | '/servers'
     | '/settings'
     | '/'
+    | '/apps/advanced'
+    | '/apps/downloads'
     | '/apps/network'
+    | '/apps/wazuh'
     | '/apps/network/history'
     | '/apps/network/scan'
   id:
@@ -135,11 +212,18 @@ export interface FileRouteTypes {
     | '/_protected'
     | '/sign-in'
     | '/sign-up'
+    | '/_protected/account'
     | '/_protected/apps'
+    | '/_protected/billing'
     | '/_protected/dashboard'
+    | '/_protected/documentation'
+    | '/_protected/servers'
     | '/_protected/settings'
     | '/_protected/'
+    | '/_protected/apps/advanced'
+    | '/_protected/apps/downloads'
     | '/_protected/apps/network'
+    | '/_protected/apps/wazuh'
     | '/_protected/apps/network/history'
     | '/_protected/apps/network/scan'
   fileRoutesById: FileRoutesById
@@ -187,11 +271,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedSettingsRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_protected/servers': {
+      id: '/_protected/servers'
+      path: '/servers'
+      fullPath: '/servers'
+      preLoaderRoute: typeof ProtectedServersRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/documentation': {
+      id: '/_protected/documentation'
+      path: '/documentation'
+      fullPath: '/documentation'
+      preLoaderRoute: typeof ProtectedDocumentationRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
     '/_protected/dashboard': {
       id: '/_protected/dashboard'
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof ProtectedDashboardRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/billing': {
+      id: '/_protected/billing'
+      path: '/billing'
+      fullPath: '/billing'
+      preLoaderRoute: typeof ProtectedBillingRouteImport
       parentRoute: typeof ProtectedRoute
     }
     '/_protected/apps': {
@@ -201,11 +306,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProtectedAppsRouteImport
       parentRoute: typeof ProtectedRoute
     }
+    '/_protected/account': {
+      id: '/_protected/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof ProtectedAccountRouteImport
+      parentRoute: typeof ProtectedRoute
+    }
+    '/_protected/apps/wazuh': {
+      id: '/_protected/apps/wazuh'
+      path: '/wazuh'
+      fullPath: '/apps/wazuh'
+      preLoaderRoute: typeof ProtectedAppsWazuhRouteImport
+      parentRoute: typeof ProtectedAppsRoute
+    }
     '/_protected/apps/network': {
       id: '/_protected/apps/network'
       path: '/network'
       fullPath: '/apps/network'
       preLoaderRoute: typeof ProtectedAppsNetworkRouteImport
+      parentRoute: typeof ProtectedAppsRoute
+    }
+    '/_protected/apps/downloads': {
+      id: '/_protected/apps/downloads'
+      path: '/downloads'
+      fullPath: '/apps/downloads'
+      preLoaderRoute: typeof ProtectedAppsDownloadsRouteImport
+      parentRoute: typeof ProtectedAppsRoute
+    }
+    '/_protected/apps/advanced': {
+      id: '/_protected/apps/advanced'
+      path: '/advanced'
+      fullPath: '/apps/advanced'
+      preLoaderRoute: typeof ProtectedAppsAdvancedRouteImport
       parentRoute: typeof ProtectedAppsRoute
     }
     '/_protected/apps/network/scan': {
@@ -239,11 +372,17 @@ const ProtectedAppsNetworkRouteWithChildren =
   ProtectedAppsNetworkRoute._addFileChildren(ProtectedAppsNetworkRouteChildren)
 
 interface ProtectedAppsRouteChildren {
+  ProtectedAppsAdvancedRoute: typeof ProtectedAppsAdvancedRoute
+  ProtectedAppsDownloadsRoute: typeof ProtectedAppsDownloadsRoute
   ProtectedAppsNetworkRoute: typeof ProtectedAppsNetworkRouteWithChildren
+  ProtectedAppsWazuhRoute: typeof ProtectedAppsWazuhRoute
 }
 
 const ProtectedAppsRouteChildren: ProtectedAppsRouteChildren = {
+  ProtectedAppsAdvancedRoute: ProtectedAppsAdvancedRoute,
+  ProtectedAppsDownloadsRoute: ProtectedAppsDownloadsRoute,
   ProtectedAppsNetworkRoute: ProtectedAppsNetworkRouteWithChildren,
+  ProtectedAppsWazuhRoute: ProtectedAppsWazuhRoute,
 }
 
 const ProtectedAppsRouteWithChildren = ProtectedAppsRoute._addFileChildren(
@@ -251,15 +390,23 @@ const ProtectedAppsRouteWithChildren = ProtectedAppsRoute._addFileChildren(
 )
 
 interface ProtectedRouteChildren {
+  ProtectedAccountRoute: typeof ProtectedAccountRoute
   ProtectedAppsRoute: typeof ProtectedAppsRouteWithChildren
+  ProtectedBillingRoute: typeof ProtectedBillingRoute
   ProtectedDashboardRoute: typeof ProtectedDashboardRoute
+  ProtectedDocumentationRoute: typeof ProtectedDocumentationRoute
+  ProtectedServersRoute: typeof ProtectedServersRoute
   ProtectedSettingsRoute: typeof ProtectedSettingsRoute
   ProtectedIndexRoute: typeof ProtectedIndexRoute
 }
 
 const ProtectedRouteChildren: ProtectedRouteChildren = {
+  ProtectedAccountRoute: ProtectedAccountRoute,
   ProtectedAppsRoute: ProtectedAppsRouteWithChildren,
+  ProtectedBillingRoute: ProtectedBillingRoute,
   ProtectedDashboardRoute: ProtectedDashboardRoute,
+  ProtectedDocumentationRoute: ProtectedDocumentationRoute,
+  ProtectedServersRoute: ProtectedServersRoute,
   ProtectedSettingsRoute: ProtectedSettingsRoute,
   ProtectedIndexRoute: ProtectedIndexRoute,
 }

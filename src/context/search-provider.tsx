@@ -25,11 +25,7 @@ export function SearchProvider({ children }: SearchProviderProps) {
     return () => document.removeEventListener('keydown', down)
   }, [])
 
-  return (
-    <SearchContext value={{ open, setOpen }}>
-      {children}
-    </SearchContext>
-  )
+  return <SearchContext value={{ open, setOpen }}>{children}</SearchContext>
 }
 
 // eslint-disable-next-line react-refresh/only-export-components

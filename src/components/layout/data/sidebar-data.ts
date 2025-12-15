@@ -10,8 +10,8 @@ import {
   Search,
   Activity,
 } from 'lucide-react'
-import { type SidebarData } from '../types'
 import { CloudXLogo } from '@/assets/cloud-x-logo'
+import { type SidebarData } from '../types'
 
 export const sidebarData: SidebarData = {
   user: {

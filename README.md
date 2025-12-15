@@ -1,117 +1,109 @@
-# Shadcn Admin Dashboard
+# Cloud-X Security Dashboard
 
-Admin Dashboard UI crafted with Shadcn and Vite. Built with responsiveness and accessibility in mind.
+<div align="center">
+  <img src="/images/logo.png" alt="Cloud-X Security Logo" width="200"/>
+  <h3>Enterprise-Grade Security Platform for SMBs</h3>
+</div>
 
-![alt text](public/images/shadcn-admin.png)
+**Cloud-X Security** is a unified security dashboard designed to bring enterprise-level monitoring, detection, and response capabilities to Small and Medium Businesses (SMBs) at an affordable scale. It combines powerful open-source tools with custom modules into a single pane of glass.
 
-I've been creating dashboard UIs at work and for my personal projects. I always wanted to make a reusable collection of dashboard UI for future projects; and here it is now. While I've created a few custom components, some of the code is directly adapted from ShadcnUI examples.
+## 🚀 Key Features
 
-> This is not a starter project (template) though. I'll probably make one in the future.
+- **Unified Dashboard**: Real-time overview of your security posture, network health, and active threats.
+- **Network Scanning**: Integrated Nmap/Masscan/Zmap functionality to discover open ports and vulnerabilities (`/api/scans`).
+- **Agent Management**: Centralized deployment and monitoring of Wazuh agents across Windows, Linux, and macOS.
+- **Real-time Alerts**: Instant notifications for critical security events.
+- **Modular Architecture**: Extensible design support for future modules like NIDS, DLP, and AI Analytics.
 
-## Features
+## 🛠️ Tech Stack
 
-- Light/dark mode
-- Responsive
-- Accessible
-- With built-in Sidebar component
-- Global search command
-- 10+ pages
-- Extra custom components
-- RTL support
+- **Frontend**: [Vite](https://vitejs.dev/) + [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
+- **UI Framework**: [ShadcnUI](https://ui.shadcn.com/) (TailwindCSS + RadixUI)
+- **Routing**: [TanStack Router](https://tanstack.com/router/latest)
+- **Backend**: Flask (Python) with Celery & Redis for async tasks
+- **Core Engine**: Wazuh SIEM (Integration in progress)
 
-<details>
-<summary>Customized Components (click to expand)</summary>
+## 📂 Project Structure
 
-This project uses Shadcn UI components, but some have been slightly modified for better RTL (Right-to-Left) support and other improvements. These customized components differ from the original Shadcn UI versions.
-
-If you want to update components using the Shadcn CLI (e.g., `npx shadcn@latest add <component>`), it's generally safe for non-customized components. For the listed customized ones, you may need to manually merge changes to preserve the project's modifications and avoid overwriting RTL support or other updates.
-
-> If you don't require RTL support, you can safely update the 'RTL Updated Components' via the Shadcn CLI, as these changes are primarily for RTL compatibility. The 'Modified Components' may have other customizations to consider.
-
-### Modified Components
-
-- scroll-area
-- sonner
-- separator
-
-### RTL Updated Components
-
-- alert-dialog
-- calendar
-- command
-- dialog
-- dropdown-menu
-- select
-- table
-- sheet
-- sidebar
-- switch
-
-**Notes:**
-
-- **Modified Components**: These have general updates, potentially including RTL adjustments.
-- **RTL Updated Components**: These have specific changes for RTL language support (e.g., layout, positioning).
-- For implementation details, check the source files in `src/components/ui/`.
-- All other Shadcn UI components in the project are standard and can be safely updated via the CLI.
-
-</details>
-
-## Tech Stack
-
-**UI:** [ShadcnUI](https://ui.shadcn.com) (TailwindCSS + RadixUI)
-
-**Build Tool:** [Vite](https://vitejs.dev/)
-
-**Routing:** [TanStack Router](https://tanstack.com/router/latest)
-
-**Type Checking:** [TypeScript](https://www.typescriptlang.org/)
-
-**Linting/Formatting:** [Eslint](https://eslint.org/) & [Prettier](https://prettier.io/)
-
-**Icons:** [Lucide Icons](https://lucide.dev/icons/), [Tabler Icons](https://tabler.io/icons) (Brand icons only)
-
-**Auth (partial):** [Clerk](https://go.clerk.com/GttUAaK)
-
-## Run Locally
-
-Clone the project
-
-```bash
-  git clone https://github.com/satnaing/shadcn-admin.git
+```
+Cloud-X-MVP/
+├── src/                        # Frontend Source Code (React + TypeScript)
+│   ├── components/
+│   │   ├── ui/                 # ShadcnUI base components
+│   │   ├── layout/             # Layouts (Sidebar, Header, AppShell)
+│   │   └── pages/              # Page-specific components
+│   ├── routes/                 # TanStack Router file-based routes
+│   │   ├── _protected/         # Protected routes (dashboard, apps, etc.)
+│   │   └── sign-in.tsx         # Authentication routes
+│   ├── lib/                    # API client and utilities
+│   ├── context/                # React Context providers
+│   ├── hooks/                  # Custom React hooks
+│   └── assets/                 # Images and static files
+├── cloudx-flask-backend/       # Backend API (Flask + Python)
+│   ├── app.py                  # Main Flask application
+│   ├── deployer.py             # Agent deployment logic (SSH/WinRM)
+│   ├── scripts/                # Agent installation scripts
+│   │   ├── windows/            # PowerShell modules, certs
+│   │   ├── linux/              # Bash scripts, threat removal
+│   │   └── mac/                # macOS installation scripts
+│   └── scanners/               # Network scanning modules (Nmap, ZMap, Masscan)
+├── cloudx-security-agent/      # Agent configuration & documentation
+│   ├── documentation/          # Agent integration guides
+│   └── wazuh-configs/          # Wazuh agent configurations
+└── Documentation/              # Project Documentation
+    ├── INDEX.md                # Central documentation index
+    ├── FRONTEND.md             # Frontend architecture guide
+    ├── BACKEND_AGENTS.md       # Backend & Agent technical docs
+    ├── BACKEND_CONFIG.md       # Backend setup and configuration
+    ├── project-description.md  # Vision & Roadmap details
+    └── prohect-wireframe.md    # UI Wireframes
 ```
 
-Go to the project directory
+## ⚡ Getting Started
 
-```bash
-  cd shadcn-admin
-```
+### Prerequisites
 
-Install dependencies
+- Node.js & npm/pnpm
+- Python 3.10+
+- Redis server (for backend tasks)
 
-```bash
-  pnpm install
-```
+### Installation
 
-Start the server
+1.  **Clone the repository**
 
-```bash
-  pnpm run dev
-```
+    ```bash
+    git clone https://github.com/MAPLEIZER/Cloud-X-MVP.git
+    cd Cloud-X-MVP
+    ```
 
-## Sponsoring this project ❤️
+2.  **Start the Backend**
 
-If you find this project helpful or use this in your own work, consider [sponsoring me](https://github.com/sponsors/satnaing) to support development and maintenance. You can [buy me a coffee](https://buymeacoffee.com/satnaing) as well. Don’t worry, every penny helps. Thank you! 🙏
+    ```bash
+    # See Documentation/BACKEND_AGENTS.md for full setup
+    npm run dev:backend
+    ```
 
-For questions or sponsorship inquiries, feel free to reach out at [contact@satnaing.dev](mailto:contact@satnaing.dev).
+3.  **Start the Frontend**
 
-### Current Sponsor
+    ```bash
+    npm run dev
+    ```
 
-- [Clerk](https://go.clerk.com/GttUAaK) - for backing the implementation of Clerk in this project
+4.  **Run Both (Recommended)**
+    ```bash
+    npm run dev:all
+    ```
 
-## Author
+## 🔮 Future Roadmap
 
-Crafted with 🤍 by [@satnaing](https://github.com/satnaing)
+We are actively building the next generation of Cloud-X with focus on:
 
-## License
+- **NIDS/IDPS**: Network Intrusion Detection
+- **DLP**: Data Loss Prevention
+- **AI Analytics**: Automated Threat Hunting
 
-Licensed under the [MIT License](https://choosealicense.com/licenses/mit/)
+See [ROADMAP.md](./ROADMAP.md) for the detailed development plan.
+
+## 📄 License
+
+[MIT License](LICENSE)

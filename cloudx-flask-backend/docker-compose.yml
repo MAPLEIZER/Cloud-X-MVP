@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    image: cloudx-backend:latest
+    container_name: cloudx-backend
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./scans.db:/app/scans.db
+      - ./server_identity.json:/app/server_identity.json
+      # Mount scans results or logs if needed
+    environment:
+      - FLASK_ENV=production
+    restart: unless-stopped

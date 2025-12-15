@@ -6,5 +6,5 @@ export const Route = createFileRoute('/sign-up')({
 })
 
 function SignUpPage() {
-  return <AuthLayout mode="sign-up" />
+  return <AuthLayout mode='sign-up' />
 }

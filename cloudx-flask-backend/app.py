@@ -8,6 +8,13 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from scanners import network_scanners as scanners
 import subprocess
+import psutil
+from ping3 import ping as ping_host
+from deployer import AgentDeployer
+
+# Initialize Deployer
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
+deployer = AgentDeployer(SCRIPTS_DIR)
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///scans.db'
@@ -140,7 +147,7 @@ def sync_status():
     except Exception as e:
         return jsonify({'status': 'error', 'reason': str(e)}), 500
 
-@app.route('/api/scan', methods=['POST'])
+@app.route('/api/scans', methods=['POST'])
 def start_scan():
     data = request.get_json()
     target = data.get('target')
@@ -177,7 +184,7 @@ def get_scans():
         'created_at': scan.created_at.isoformat()
     } for scan in scans])
 
-@app.route('/api/scan/<job_id>/stop', methods=['POST'])
+@app.route('/api/scans/<job_id>/stop', methods=['POST'])
 def stop_scan(job_id):
     proc = active_scans.get(job_id)
     if not proc:
@@ -200,7 +207,7 @@ def stop_scan(job_id):
 
     return jsonify({'message': 'Scan stopped successfully'}), 200
 
-@app.route('/api/scan/<job_id>', methods=['GET'])
+@app.route('/api/scans/<job_id>', methods=['GET'])
 def get_scan_status(job_id):
     scan = Scan.query.filter_by(job_id=job_id).first_or_404()
     
@@ -214,6 +221,145 @@ def get_scan_status(job_id):
         'results': json.loads(scan.results) if scan.results else None
     }
     return jsonify(response)
+
+@app.route('/api/scans/<job_id>', methods=['DELETE'])
+def delete_scan(job_id):
+    # If running, stop it first
+    if job_id in active_scans:
+        stop_scan(job_id)
+
+    scan = Scan.query.filter_by(job_id=job_id).first()
+    if not scan:
+        return jsonify({'error': 'Scan not found'}), 404
+
+    try:
+        db.session.delete(scan)
+        db.session.commit()
+        return jsonify({'message': 'Scan deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Failed to delete scan: {str(e)}'}), 500
+
+
+@app.route('/api/system-monitor', methods=['GET'])
+def system_monitor():
+    target = request.args.get('target', 'localhost')
+    
+    # Check if target is local
+    is_local = target in ['localhost', '127.0.0.1', '0.0.0.0']
+    
+    data = {
+        'cpu': [],
+        'memory': [],
+        'disk': [],
+        'network': []
+    }
+
+    if is_local:
+        # Local metrics via psutil
+        cpu = psutil.cpu_percent(interval=1)
+        mem = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('/').percent
+        # Network is cumulative, so we'd need delta, for now just returning 0 or generic
+        # A real implementation would store valid previous state to calc rate
+        
+        data['cpu'] = [{'value': cpu, 'timestamp': datetime.now().timestamp() * 1000, 'isSpike': cpu > 80}]
+        data['memory'] = [{'value': mem, 'timestamp': datetime.now().timestamp() * 1000, 'isSpike': mem > 80}]
+        # ... others
+        
+        return jsonify(data)
+    else:
+        # Remote ping
+        try:
+            latency = ping_host(target, unit='ms')
+            if latency is None:
+                latency = 0
+        except:
+            latency = 0
+            
+        # For remote, we return the latency as "Network" value and simulated others
+        # indicating it's agentless
+        return jsonify({
+            'network': [{'value': latency, 'timestamp': datetime.now().timestamp() * 1000}],
+            'is_agentless': True
+        })
+
+@app.route('/api/deploy/agent', methods=['POST'])
+def deploy_agent():
+    data = request.json
+    target = data.get('target')
+    os_type = data.get('os_type') # linux, windows, mac
+    username = data.get('username')
+    password = data.get('password')
+    agent_name = data.get('agent_name', f"agent-{target}")
+    group = data.get('group', 'default')
+    
+    # My IP (Manager IP) - Try to detect or allow override
+    manager_ip = data.get('manager_ip', request.host.split(':')[0])
+
+    if not all([target, os_type, username, password]):
+        return jsonify({'error': 'Missing required credentials'}), 400
+
+    if os_type == 'linux':
+        result = deployer.deploy_linux(target, username, password, manager_ip, agent_name, group)
+    elif os_type == 'windows':
+        result = deployer.deploy_windows(target, username, password, manager_ip, agent_name, group)
+    elif os_type == 'mac':
+        result = deployer.deploy_mac(target, username, password, manager_ip, agent_name, group)
+    else:
+        return jsonify({'error': 'Invalid OS type'}), 400
+
+    if result['status'] == 'success':
+        return jsonify({'message': 'Deployment successful', 'output': result.get('output')})
+    else:
+        return jsonify({'error': 'Deployment failed', 'details': result}), 500
+
+@app.route('/api/deploy/node', methods=['POST'])
+def deploy_node():
+    """Deploys a new Backend Node (Docker) on a target server via SSH"""
+    data = request.json
+    target = data.get('target')
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not all([target, username, password]):
+        return jsonify({'error': 'Missing credentials'}), 400
+
+    # Command to install docker and run container
+    # Simplified: Assuming Docker exists or one-liner install
+    # We will upload the docker-compose.yml content
+    
+    deploy_script = f"""
+    if ! command -v docker &> /dev/null; then
+        curl -fsSL https://get.docker.com | sh
+    fi
+    mkdir -p ~/cloudx-backend
+    cd ~/cloudx-backend
+    # We would actually grab the image from a repo, but for MVP we might need to build/load
+    # For now, let's assume we pull from a registry (e.g. docker hub placeholder)
+    # OR we just start a hello-world to prove concept
+    docker run -d -p 5001:5001 --name cloudx-backend python:3.9-slim python -c "import http.server; http.server.test(Port=5001)"
+    """
+    
+    # Use Paramiko to run this
+    try:
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(target, username=username, password=password)
+        
+        stdin, stdout, stderr = ssh.exec_command(deploy_script)
+        exit_status = stdout.channel.recv_exit_status()
+        out = stdout.read().decode()
+        
+        ssh.close()
+        
+        if exit_status == 0:
+             return jsonify({'message': 'Node deployed', 'node_url': f'http://{target}:5001'})
+        else:
+             return jsonify({'error': 'Node deployment failed', 'details': out}), 500
+             
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 def cleanup_stale_scans():
     # Scans that are 'running' or 'submitted' when the app starts are stale.

@@ -50,12 +50,16 @@ src/
 │   │   ├── network/    # Network scanner pages
 │   │   └── dashboard/  # Dashboard widgets
 │   └── ui/            # ShadcnUI components
-├── routes/            # TanStack Router routes
-│   ├── _protected/    # Protected routes
-│   │   ├── apps/      # App routes
-│   │   └── dashboard/ # Dashboard route
-│   ├── sign-in/       # Auth routes
-│   └── sign-up/
+├── routes/            # TanStack Router file-based routes
+│   ├── __root.tsx     # Root layout
+│   ├── _protected.tsx # Protected route wrapper
+│   ├── _protected/    # Protected child routes
+│   │   ├── dashboard.tsx
+│   │   ├── apps.network.scan.tsx
+│   │   ├── apps.wazuh.tsx
+│   │   └── ...
+│   ├── sign-in.tsx    # Auth routes
+│   └── sign-up.tsx
 ├── context/           # React context providers
 ├── lib/              # Utilities and API client
 └── types/            # TypeScript type definitions
@@ -81,9 +85,14 @@ The frontend connects to a Flask backend running at `http://192.168.100.37:5001`
 
 ### API Endpoints:
 - `GET /api/health` - Backend health check
-- `POST /api/scan` - Start new network scan
+- `GET /api/ping` - Simple connectivity check
+- `POST /api/scans` - Start new network scan
 - `GET /api/scans` - Get scan history
-- `GET /api/scan/:id` - Get specific scan details
+- `GET /api/scans/:job_id` - Get specific scan details
+- `DELETE /api/scans/:job_id` - Delete a scan
+- `POST /api/scans/:job_id/stop` - Stop a running scan
+- `GET /api/system-monitor` - System resource monitoring
+- `POST /api/deploy/agent` - Deploy Wazuh agent to a target
 
 ### Network Scanning Tools:
 - **Nmap** - Comprehensive network discovery and security auditing

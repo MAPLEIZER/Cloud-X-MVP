@@ -1,22 +1,23 @@
 import { useState } from 'react'
 import { useLocation, Link } from '@tanstack/react-router'
-import { 
-  LayoutDashboard, 
-  Network, 
-  Download, 
-  Shield, 
-  Settings2, 
-  Settings, 
-  BookOpen, 
+import {
+  LayoutDashboard,
+  Network,
+  Download,
+  Shield,
+  Settings2,
+  Settings,
+  BookOpen,
   CreditCard,
   ChevronDown,
   ChevronRight,
   History,
-  Scan
+  Scan,
+  Server,
 } from 'lucide-react'
 import { CloudXLogo } from '@/assets/cloud-x-logo'
 import { cn } from '@/lib/utils'
-import { 
+import {
   Sidebar,
   SidebarContent,
   SidebarGroup,
@@ -26,7 +27,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
-  SidebarFooter
+  SidebarFooter,
+  SidebarMenuSub,
 } from '@/components/ui/sidebar'
 import { ConnectionStatus } from '@/components/custom/connection-status'
 import { NavUser } from '@/components/layout/nav-user'
@@ -80,6 +82,12 @@ const navigationItems = [
     icon: Settings,
   },
   {
+    title: 'Servers',
+    url: '/servers',
+    icon: Server,
+    items: [],
+  },
+  {
     title: 'Documentation',
     url: '/documentation',
     icon: BookOpen,
@@ -96,9 +104,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [expandedItems, setExpandedItems] = useState<string[]>(['Apps'])
 
   const toggleExpanded = (title: string) => {
-    setExpandedItems(prev => 
-      prev.includes(title) 
-        ? prev.filter(item => item !== title)
+    setExpandedItems((prev) =>
+      prev.includes(title)
+        ? prev.filter((item) => item !== title)
         : [...prev, title]
     )
   }
@@ -107,7 +115,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     return location.pathname === url || location.pathname.startsWith(url + '/')
   }
 
-  const renderMenuItem = (item: typeof navigationItems[0], level = 0) => {
+  const renderMenuItem = (item: (typeof navigationItems)[0], level = 0) => {
     const hasSubItems = item.items && item.items.length > 0
     const isExpanded = expandedItems.includes(item.title)
     const isItemActive = item.url ? isActive(item.url) : false
@@ -117,29 +125,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenuItem key={item.title}>
           <SidebarMenuButton
             onClick={() => toggleExpanded(item.title)}
-            className={cn(
-              'w-full justify-between',
-              level > 0 && 'ml-4'
-            )}
+            className={cn('w-full justify-between', level > 0 && 'ml-4')}
           >
-            <div className="flex items-center">
-              {item.icon && <item.icon className="mr-2 h-4 w-4" />}
+            <div className='flex items-center'>
+              {item.icon && <item.icon className='mr-2 h-4 w-4' />}
               <span>{item.title}</span>
             </div>
             {isExpanded ? (
-              <ChevronDown className="h-4 w-4" />
+              <ChevronDown className='h-4 w-4' />
             ) : (
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className='h-4 w-4' />
             )}
           </SidebarMenuButton>
           {isExpanded && (
-            <div className="ml-4 space-y-1">
-              {item.items?.map((subItem) => (
-                <div key={subItem.title}>
-                  {renderMenuItem(subItem, level + 1)}
-                </div>
-              ))}
-            </div>
+            <SidebarMenuSub className='ml-0 space-y-1 border-l-0 pl-4'>
+              {item.items?.map((subItem) => renderMenuItem(subItem, level + 1))}
+            </SidebarMenuSub>
           )}
         </SidebarMenuItem>
       )
@@ -150,7 +151,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenuItem key={item.title}>
           <SidebarMenuButton asChild isActive={isItemActive}>
             <Link to={item.url} className={cn(level > 1 && 'ml-4')}>
-              {item.icon && <item.icon className="mr-2 h-4 w-4" />}
+              {item.icon && <item.icon className='mr-2 h-4 w-4' />}
               <span>{item.title}</span>
             </Link>
           </SidebarMenuButton>
@@ -162,13 +163,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   return (
-    <Sidebar {...props} className="border-r">
-      <SidebarHeader className="border-b px-4 py-4">
-        <div className="flex items-center justify-center">
-          <CloudXLogo className="h-8 w-auto" width={32} height={32} />
+    <Sidebar {...props} className='border-r'>
+      <SidebarHeader className='border-b px-4 py-4'>
+        <div className='flex items-center justify-center'>
+          <CloudXLogo className='h-8 w-auto' width={32} height={32} />
         </div>
       </SidebarHeader>
-      
+
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
@@ -180,9 +181,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="border-t p-4">
-        <div className="space-y-3">
-          <ConnectionStatus size="sm" />
+      <SidebarFooter className='border-t p-4'>
+        <div className='space-y-3'>
+          <ConnectionStatus size='sm' />
           <NavUser />
         </div>
       </SidebarFooter>

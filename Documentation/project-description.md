@@ -120,4 +120,22 @@ Wazuh REST API → fetch agent/alert data.
 
 Flask custom API → network scans, downloads, scripts.
 
-Modularity: Each "app" in the dashboard should be its own module in the codebase (so later you can add/remove apps without breaking the core).
+
+123: Modularity: Each "app" in the dashboard should be its own module in the codebase (so later you can add/remove apps without breaking the core).
+124: 
+125: 6. Future Roadmap & Vision
+126: 
+127: The long-term vision for Cloud-X is to evolve into a fully security-based enterprise platform that remains affordable for Small and Medium-sized Businesses (SMBs).
+128: 
+129: Core Philosophy:
+130: -   **Wazuh SIEM as the Core**: The central nervous system of the platform, collecting logs, events, and alerts from all endpoints.
+131: -   **Unified Platform**: Combining custom-built modules with best-in-breed open-source tools.
+132: 
+133: Upcoming Modules:
+134: -   **Network Intrusion Detection & Prevention (NIDS/IDPS)**: Advanced network monitoring to detect and block malicious traffic patterns.
+135: -   **Data Loss Prevention (DLP)**: Mechanisms to prevent sensitive data exfiltration.
+136: -   **Entity and User Behavior Analytics (EUBA)**: Baseline user activity to detect anomalies and insider threats.
+137: -   **AI & Analytics Modules**: Leveraging AI to correlate events, predict threats, and automate response actions (SOAR).
+138: 
+139: Target Audience:
+140: -   SMBs needing enterprise-grade security without the enterprise price tag.

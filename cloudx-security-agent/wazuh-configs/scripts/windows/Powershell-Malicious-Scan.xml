@@ -1,0 +1,99 @@
+<group name="windows,powershell,cloudx">
+  <!-- General PowerShell Events -->
+  <rule id="100535" level="3">
+    <if_sid>60009</if_sid>
+    <field name="win.system.providerName">^(PowerShell|Microsoft-Windows-PowerShell)$</field>
+    <field name="win.system.severityValue">INFO|VERBOSE|WARNING|ERROR|CRITICAL</field>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+    <options>no_full_log</options>
+    <description>Powershell EventLog Monitoring</description>
+  </rule>
+
+  <!-- Frequency-based alert: multiple errors in short time -->
+    <rule id="100539" level="12" frequency="8" timeframe="60">
+    <if_matched_sid>100535</if_matched_sid>
+    <field name="win.system.severityValue">ERROR|CRITICAL</field>
+    <description>Short-time multiple Windows Powershell error/critical events</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+    <options>no_full_log</options>
+        <group>pci_dss_10.6.1,attack_execution,</group>
+  </rule>
+
+  <!-- Script execution monitoring -->
+  <rule id="100541" level="3">
+    <if_sid>91802</if_sid>
+    <field name="win.system.severityValue">VERBOSE|INFO</field>
+    <description>Powershell script executed: $(win.eventdata.scriptBlockText)</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+    <options>no_full_log</options>
+  </rule>
+
+  <!-- Ignore common benign script text -->
+  <rule id="100542" level="1">
+    <if_sid>100541</if_sid>
+    <field name="win.system.eventID">^4105$|^4106$</field>
+    <description>Disregard common Powershell text events</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="100544" level="1">
+    <if_sid>100541</if_sid>
+    <field name="win.eventdata.scriptBlockText">PSMessageDetails|ErrorCategory_Message|OriginInfo</field>
+    <description>Disregard Powershell prompt/output text</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <rule id="100545" level="1">
+    <if_sid>100541</if_sid>
+    <field name="win.eventdata.scriptBlockText">^prompt$</field>
+    <description>Disregard Powershell prompt text</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+  </rule>
+
+  <!-- Malicious command detection -->
+  <rule id="100543" level="12">
+    <if_sid>100541</if_sid>
+    <list field="win.eventdata.scriptBlockText" lookup="etc/lists/malicious-powershell"/>
+    <description>Malicious Powershell command executed: $(win.eventdata.scriptBlockText)</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+    <options>no_full_log</options>
+    <group>windows_powershell_highrisk,</group>
+  </rule>
+
+  <!-- Detect PowerShell Obfuscation (EncodedCommand) -->
+  <rule id="100546" level="13">
+    <if_sid>61605</if_sid>
+    <field name="win.system.eventID">^4688$</field>
+    <pcre2>(?i)powershell.+(-e|-en|-enc|-enco|-encod|-encode|-encoded|-encodedc|-encodedco|-encodedcom|-encodedcomm|-encodedcomma|-encodedcomman|-encodedcommand)\s+\w+</pcre2>
+    <description>Suspicious PowerShell execution with encoded command detected.</description>
+    <mitre>
+      <id>T1027</id>
+    </mitre>
+    <group>windows_powershell_highrisk,technique_obfuscation,</group>
+  </rule>
+
+  <!-- Detect In-memory Download and Execution (IEX) -->
+  <rule id="100547" level="12">
+    <if_sid>100541</if_sid>
+    <field name="win.eventdata.scriptBlockText" type="pcre2">(?i)IEX.*New-Object.*Net\.WebClient.*DownloadString</field>
+    <description>Malicious PowerShell script detected: In-memory download and execution.</description>
+    <mitre>
+      <id>T1059.001</id>
+    </mitre>
+    <group>windows_powershell_highrisk,attack_execution,</group>
+  </rule>
+</group>

@@ -44,10 +44,21 @@ This is required because tools like ZMap and Masscan need root access to open ra
 
 ## API Endpoints
 
-- GET /api/scans - List all scans
-- POST /api/scans - Start a new scan
-- GET /api/scans/<job_id> - Get scan status and results
-- DELETE /api/scans/<job_id> - Stop a running scan
+- `GET /api/scans` - List all scans
+- `POST /api/scans` - Start a new scan (Body: `target`, `tool`, `scan_type`, `port`)
+- `GET /api/scans/<job_id>` - Get scan status and results
+- `DELETE /api/scans/<job_id>` - Stop a running scan
+- `POST /api/scans/<job_id>/stop` - Stop a specific scan
+- `GET /api/system-monitor?target=<ip>` - Monitor system resources (local or remote ping)
+- `POST /api/deploy/agent` - Deploy Wazuh agent to a target (Body: `target`, `os_type`, `username`, `password`, etc.)
+- `POST /api/deploy/node` - Deploy a backend node to a target
+- `GET /api/sync-status` - Check heartbeat file status
+- `GET /api/health` - Simple health check
+- `GET /api/ping` - Connectivity check
+
+## Database
+
+The application uses a local SQLite database (`scans.db`) to store scan jobs and results.
 
 ## Configuration
 
