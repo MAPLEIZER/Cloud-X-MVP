@@ -36,7 +36,9 @@ class AgentDeployer:
                 cert_content_b64 = base64.b64encode(f.read()).decode('utf-8')
 
         except FileNotFoundError as e:
-             return {'status': 'error', 'message': f'File not found: {str(e)}'}
+            import logging
+            logging.exception("File not found during deploy_windows")
+            return {'status': 'error', 'message': 'Required deployment file is missing on the server.'}
 
         # ... (WinRM logic implementation details omitted for MVP brevity, assuming existing logic)
         # In a real impl, we would use pywinrm to copy the script and execute:
@@ -138,7 +140,9 @@ class AgentDeployer:
                 return {'status': 'error', 'output': out, 'error': err}
 
         except Exception as e:
-            return {'status': 'error', 'error': str(e)}
+            import logging
+            logging.exception("Exception during SSH bundle deployment")
+            return {'status': 'error', 'error': 'An internal error occurred during agent deployment.'}
 
     # Helper method for WinRM script execution (assuming it will be added elsewhere or is implicit)
     def _execute_winrm(self, host, username, password, ps_script):
@@ -155,4 +159,6 @@ class AgentDeployer:
             raise e # Re-raise the exception after WinRM operation fails
 
         except Exception as e:
-            return {'status': 'error', 'error': str(e)}
+            import logging
+            logging.exception("Exception during WinRM execution")
+            return {'status': 'error', 'error': 'An internal error occurred during agent deployment.'}
