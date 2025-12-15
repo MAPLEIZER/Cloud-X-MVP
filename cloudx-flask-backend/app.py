@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+import logging
 import uuid
 import threading
 import json
@@ -11,6 +12,10 @@ import subprocess
 import psutil
 from ping3 import ping as ping_host
 from deployer import AgentDeployer
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Initialize Deployer
 SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'scripts')
@@ -359,7 +364,8 @@ def deploy_node():
              return jsonify({'error': 'Node deployment failed', 'details': out}), 500
              
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        logger.exception("Exception during node deployment")
+        return jsonify({'error': 'An internal error has occurred while deploying the node.'}), 500
 
 def cleanup_stale_scans():
     # Scans that are 'running' or 'submitted' when the app starts are stale.
