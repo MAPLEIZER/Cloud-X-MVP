@@ -1,0 +1,143 @@
+# Dependabot configuration for Cloud-X Security Dashboard
+# This file configures automated dependency updates for GitHub
+
+version: 2
+updates:
+
+  # Enable security updates for all ecosystems
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "security"
+
+  # Frontend (npm) dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    assignees:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "frontend"
+      - "security"
+    groups:
+      # Group all minor and patch updates together
+      all-minor-patch:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+        apply-groups: "any"
+      # Group major updates separately for review
+      major-updates:
+        dependency-type: "all"
+        update-types:
+          - "major"
+        apply-groups: "any"
+
+  # Backend (Python) dependencies
+  - package-ecosystem: "pip"
+    directory: "cloudx-flask-backend"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    assignees:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "backend"
+      - "python"
+      - "security"
+    groups:
+      # Group minor and patch updates
+      python-minor-patch:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+        apply-groups: "any"
+      # Group major updates
+      python-major:
+        dependency-type: "all"
+        update-types:
+          - "major"
+        apply-groups: "any"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "first"
+      time: "09:00"
+    open-pull-requests-limit: 3
+    reviewers:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    assignees:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci"
+    groups:
+      github-actions:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+        apply-groups: "any"
+
+  # Docker dependencies (if you have Dockerfile)
+  - package-ecosystem: "docker"
+    directory: "cloudx-flask-backend"
+    schedule:
+      interval: "monthly"
+      day: "first"
+      time: "10:00"
+    open-pull-requests-limit: 2
+    reviewers:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    assignees:
+      - "MAPLEIZER"  # Replace with your actual GitHub username
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+    groups:
+      docker-updates:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+        apply-groups: "any"
