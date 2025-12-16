@@ -11,7 +11,6 @@ on:
 env:
   IMAGE_NAME: cloudx-backend
   REGISTRY: ghcr.io
-  REGISTRY_OWNER: ${{ toLower(github.repository_owner) }}
 
 jobs:
   build-and-push:
@@ -24,9 +23,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set registry owner (lowercase)
-        run: |
-          echo "REGISTRY_OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+      - name: Compute registry owner (lowercase)
+        id: registry-owner
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -35,7 +34,7 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ env.REGISTRY_OWNER }}
+          username: ${{ steps.registry-owner.outputs.value }}
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Build and push backend image
@@ -45,13 +44,13 @@ jobs:
           file: ./cloudx-flask-backend/Dockerfile
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:latest
-            ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ steps.registry-owner.outputs.value }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ steps.registry-owner.outputs.value }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Summary
         run: |
           echo "Pushed:"
-          echo "  ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:latest"
-          echo "  ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          echo "  ${{ env.REGISTRY }}/${{ steps.registry-owner.outputs.value }}/${{ env.IMAGE_NAME }}:latest"
+          echo "  ${{ env.REGISTRY }}/${{ steps.registry-owner.outputs.value }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
