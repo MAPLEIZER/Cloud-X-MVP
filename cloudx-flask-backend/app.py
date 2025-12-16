@@ -12,6 +12,7 @@ import subprocess
 import psutil
 from ping3 import ping as ping_host
 from deployer import AgentDeployer
+import paramiko
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -154,7 +155,11 @@ def sync_status():
 
 @app.route('/api/scans', methods=['POST'])
 def start_scan():
-    data = request.get_json()
+    data = request.get_json(silent=True)
+
+    if not isinstance(data, dict):
+        return jsonify({'error': 'Request body must be valid JSON.'}), 400
+
     target = data.get('target')
     tool = data.get('tool', 'nmap')
     scan_type = data.get('scan_type', 'default')
@@ -162,6 +167,33 @@ def start_scan():
 
     if not target:
         return jsonify({'error': 'Target is required'}), 400
+
+    allowed_tools = {
+        'nmap': {'default', 'quick', 'intense', 'tcp', 'udp'},
+        'zmap': {'tcp_syn', 'icmp_echo'},
+        'masscan': {'tcp_scan', 'udp_scan', 'ping_scan'}
+    }
+    if tool not in allowed_tools:
+        return jsonify({'error': f"Unsupported scanning tool '{tool}'. Allowed tools are: {', '.join(sorted(allowed_tools))}"}), 400
+
+    allowed_scan_types = allowed_tools[tool]
+    if scan_type not in allowed_scan_types:
+        return jsonify({'error': f"Unsupported scan_type '{scan_type}' for tool '{tool}'. Allowed scan types: {', '.join(sorted(allowed_scan_types))}"}), 400
+
+    if port is not None:
+        try:
+            port = int(port)
+            if port < 1 or port > 65535:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Port must be an integer between 1 and 65535 when provided.'}), 400
+
+    port_required = {
+        'zmap': {'tcp_syn'},
+        'masscan': {'tcp_scan', 'udp_scan'}
+    }
+    if scan_type in port_required.get(tool, set()) and port is None:
+        return jsonify({'error': f"Scan type '{scan_type}' requires a 'port' value."}), 400
 
     new_scan = Scan(tool=tool, target=target, scan_type=scan_type, status='submitted')
     db.session.add(new_scan)

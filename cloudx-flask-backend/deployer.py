@@ -1,8 +1,12 @@
 
-import paramiko
-import winrm
+import logging
 import os
 import time
+
+import paramiko
+import winrm
+
+logger = logging.getLogger(__name__)
 
 class AgentDeployer:
     def __init__(self, scripts_dir):
@@ -36,9 +40,8 @@ class AgentDeployer:
                 cert_content_b64 = base64.b64encode(f.read()).decode('utf-8')
 
         except FileNotFoundError as e:
-            import logging
-            logging.exception("File not found during deploy_windows")
-            return {'status': 'error', 'message': 'Required deployment file is missing on the server.'}
+            logger.exception("File not found during deploy_windows")
+            return {'status': 'error', 'error': 'An internal error occurred during agent deployment.'}
 
         # ... (WinRM logic implementation details omitted for MVP brevity, assuming existing logic)
         # In a real impl, we would use pywinrm to copy the script and execute:
@@ -140,8 +143,7 @@ class AgentDeployer:
                 return {'status': 'error', 'output': out, 'error': err}
 
         except Exception as e:
-            import logging
-            logging.exception("Exception during SSH bundle deployment")
+            logger.exception("Exception during SSH bundle deployment")
             return {'status': 'error', 'error': 'An internal error occurred during agent deployment.'}
 
     # Helper method for WinRM script execution (assuming it will be added elsewhere or is implicit)
@@ -155,10 +157,6 @@ class AgentDeployer:
             else:
                 return {'status': 'error', 'error': result.std_err.decode(), 'output': result.std_out.decode()}
 
-        except Exception as e:
-            raise e # Re-raise the exception after WinRM operation fails
-
-        except Exception as e:
-            import logging
-            logging.exception("Exception during WinRM execution")
+        except Exception:
+            logger.exception("Exception during WinRM execution")
             return {'status': 'error', 'error': 'An internal error occurred during agent deployment.'}
