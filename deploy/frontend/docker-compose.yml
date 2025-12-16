@@ -1,0 +1,9 @@
+services:
+  frontend:
+    image: ghcr.io/MAPLEIZER/cloudx-frontend:latest
+    container_name: cloudx-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    # Note: API URL is baked into the image at build time via FRONTEND_API_BASE_URL build arg.
+    # To change it, rebuild the image with a different FRONTEND_API_BASE_URL value.

@@ -1,141 +1,119 @@
-# Cloud-X Backend: Docker Deployment and Multi-Node Topology Plan
+# Cloud-X Backend: Dockerized Install & Node Bootstrap
 
-This document describes how to refactor the Flask backend for containerized deployment on any VPS, establish node visibility and health, and support load balancing. It focuses on a practical path you can complete incrementally within a couple of hours for the first pass.
+Borrowed Cloud-X ASCII art (from the agent installer) for the installer banner:
 
-## Goals
-- Build and run the backend from a Docker image (Python base, no system Python assumptions).
-- Standardize a service port and health/metrics endpoints.
-- Allow multiple backend nodes to register and be visible to a primary node (control plane) for status and simple load distribution.
-- Make it easy to push updates to remote Ubuntu nodes (pull new image and restart via Docker Compose).
-- Keep this minimally invasive for the current codebase; start with docs and a compose template.
-
-## Proposed Container Baseline
-- Base image: `python:3.10-slim` (or 3.11-slim if compatible with deps).
-- Working directory: `/app`
-- Install system deps: `build-essential` (for pip builds), `nmap`, `zmap`, `masscan` (optional; can be installed on host and mounted in if root requirements block container).
-- Copy backend code: `cloudx-flask-backend/`
-- Install Python deps: `pip install -r requirements.txt && pip install gunicorn gevent`
-- Entrypoint (MVP): `gunicorn -w 4 -k gevent -b 0.0.0.0:5001 app:app`
-- Volumes (optional):
-  - `/data/cloudx` for SQLite or logs (prefer external DB for multi-node).
-  - `/scripts` if you want to share the agent installer scripts as static content.
-
-## Ports and Endpoints
-- Service API: `5001` (HTTP). Keep aligned with current default to minimize code changes.
-- Health: `GET /api/health` (already exists).
-- Ping: `GET /api/ping` (already exists).
-- Node heartbeat (new, suggested): `POST /api/nodes/heartbeat` to let workers report liveness to the primary.
-- Metrics (optional, suggested): `GET /metrics` (Prometheus text), or reuse `/api/system-monitor?target=localhost` internally for basic stats.
-
-## Node Topology (Control + Workers)
-- **Primary node**: runs API and a registry of nodes (in DB). Provides an endpoint for registration/heartbeat and a “nodes” list for visibility.
-- **Worker nodes**: run the same container image; on startup, call the primary to register. They share the same backing datastore (Redis/Postgres) so task state is consistent.
-- **Shared state** (recommended):
-  - Postgres for durable data (instead of SQLite).
-  - Redis for Celery (if/when you add workers for scans/tasks).
-- **Load balancing**: place Nginx/HAProxy/Traefik in front of multiple backend containers. Nginx listens on `80/443`, proxies to the backend pool on `5001`.
-
-## Minimal API Additions (future code changes)
-- `POST /api/nodes/register`: body `{node_id, hostname, ip, role, capabilities, version}`.
-- `POST /api/nodes/heartbeat`: body `{node_id, status, cpu, mem, loadavg, updated_at}`.
-- `GET /api/nodes`: list nodes and their last heartbeat (for UI visibility).
-- `GET /api/nodes/:id`: detail view (optional).
-
-For a first doc-only pass, do not change code; add these endpoints later behind auth.
-
-## Docker Compose Template (per VPS)
-
-Create `docker-compose.yml` on the target VPS:
-```yaml
-version: "3.8"
-services:
-  backend:
-    image: ghcr.io/your-org/cloudx-backend:latest
-    restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "5001:5001"
-    volumes:
-      - ./data:/data/cloudx  # if using SQLite or local artifacts
-    depends_on:
-      - redis
-      # - postgres  # if/when you move off SQLite
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
-
-  # postgres:
-  #   image: postgres:16-alpine
-  #   restart: unless-stopped
-  #   environment:
-  #     POSTGRES_USER: cloudx
-  #     POSTGRES_PASSWORD: change_me
-  #     POSTGRES_DB: cloudx
-  #   volumes:
-  #     - ./pgdata:/var/lib/postgresql/data
-  #   ports:
-  #     - "5432:5432"
+```text
+                                                                                                    
+                                                                                                    
+                                               @@@@@                                                
+                                            @@@      @@                                             
+                                          @@             @@                                         
+                                     @@@@@@         @@@@@@@@@@@                                     
+                                    @@@           @@@         @@                                    
+                                   @@           @@@  @@@@@@@@@ @@                                   
+                                   @@ @       @@@  @@@       @ @@                                   
+                                   @@ @@    @@@  @@@         @ @@                                   
+                                    @@   @@    @@@            @@                                    
+                                     @@@@@@@@@@@       @@@@@@@                                      
+                                         @@@                                                        
+                                                                                                    
+                                    @@                     @@    @    @                             
+                               @    @@   @@             @  @     @@  @                              
+                             @@@@@@ @@ @@@@@@  @@  @@ @@@@@@       @@                               
+                            @@      @@ @@   @@ @   @@ @    @      @ @@                              
+                             @@@@@  @@ @@@@@@  @@@@@@ @@@@@@@    @   @@                             
+                                                                                                    
+                                                                                                    
+                                                                                                    
 ```
 
-Example `.env` (MVP):
-```
-FLASK_DEBUG=0
-DATABASE_URL=sqlite:////data/cloudx/scans.db
-PORT=5001
-PRIMARY_NODE_URL=http://primary-node:5001
-NODE_ID=backend-primary
+## Backend shape (from repo scan)
+- API server: `cloudx-flask-backend/app.py` (Flask + SQLAlchemy), listens on `0.0.0.0:5001`, uses SQLite `scans.db`, and exposes `/api/health`, `/api/ping`, `/api/scans`, `/api/system-monitor`, `/api/deploy/agent`, `/api/deploy/node`.
+- Identity + persistence: `entrypoint.sh` creates `server_identity.json` (UUID) and exports `SERVER_ID`; volumes are expected for `scans.db` and `server_identity.json` so nodes keep identity across restarts.
+- Agent deploy helper: `deployer.py` ships the scripts in `cloudx-flask-backend/scripts/{linux,windows,mac}` to remote hosts (Wazuh agent install/cleanup).
+- Docker build: `cloudx-flask-backend/Dockerfile` uses `python:3.9-slim`, installs `nmap` + `iputils-ping` + `curl`, copies the app, and runs `entrypoint.sh`.
+- Compose default: `cloudx-flask-backend/docker-compose.yml` maps `5001:5001`, mounts `./scans.db` and `./server_identity.json`, restarts unless stopped. Scanners need raw sockets (`NET_RAW`) when using masscan/zmap/nmap; add the capability when running in Docker.
+
+## Build or publish the image (run from repo root)
+```bash
+# Build from cloudx-flask-backend
+docker build -t cloudx-backend:latest cloudx-flask-backend
+
+# Optional: save for offline install
+docker save cloudx-backend:latest > cloudx-backend.tar
+# Optional: push to a registry you control
+# docker tag cloudx-backend:latest ghcr.io/<org>/cloudx-backend:latest
+# docker push ghcr.io/<org>/cloudx-backend:latest
 ```
 
-> Note: Customize `NODE_ID` per node (e.g., `backend-primary`, `backend-worker-1`). If you prefer dynamic values, inject `NODE_ID` via an entrypoint or wrapper script that runs `export NODE_ID=$(hostname)` before launching the app.
+## Interactive install script (run on the backend server)
+Use this on Ubuntu/Debian VPS hosts to lay down `.env` + `docker-compose.yml`, load/pull the image, and start the container with prompts for host-specific values (hostname, port, role, primary URL, image tag). The banner reuses the Cloud-X ASCII art above.
 
-### Building and Publishing the Image
-Locally (or in CI):
-```
-docker build -t ghcr.io/your-org/cloudx-backend:latest -f Dockerfile .
-docker push ghcr.io/your-org/cloudx-backend:latest
-```
-If you do not have a registry, scp the built image tarball:
-```
-docker save ghcr.io/your-org/cloudx-backend:latest > cloudx-backend.tar
-scp cloudx-backend.tar user@vps:/tmp
-ssh user@vps "docker load -i /tmp/cloudx-backend.tar"
+### How to run
+Copy the included `install_backend.sh` from the repository to your server and execute it with root privileges:
+
+```bash
+cp install_backend.sh /tmp/install_backend.sh
+sudo bash /tmp/install_backend.sh
 ```
 
-### Deploy/Update on Ubuntu VPS
-```
-ssh user@vps
-cd /opt/cloudx
-docker compose pull          # or docker compose build if building on-box
-docker compose up -d
-```
-Automate with a systemd unit + timer or a cron job that does `docker compose pull && docker compose up -d`.
+### What the script does
+- Prints the Cloud-X ASCII banner, confirms Docker + docker compose availability, and prompts for data dir, image tag, host port, node role, primary URL (for workers), node ID, and NET_RAW capability.
+- Optionally loads a saved tarball (`docker load`) or attempts `docker pull` for the chosen image.
+- Writes `.env` and `docker-compose.yml` into the chosen data directory, mounting `scans.db` and `server_identity.json` so the node keeps its ID.
+- Runs `docker compose up -d` and leaves the app listening on the chosen host port mapped to container port 5001 (the app itself is fixed to 5001 in `app.py`).
 
-### Registry Auth
-- Use GitHub Container Registry (GHCR) or Docker Hub.
-- Log in once per node:
-  `echo $CR_PAT | docker login ghcr.io -u USERNAME --password-stdin`
+## Multi-node notes
+- Primary vs worker: the current codebase does not yet implement `/api/nodes/register` or `/api/nodes/heartbeat`; the `PRIMARY_NODE_URL`/`NODE_ROLE` values are persisted for future upgrades and documentation clarity.
+- Identity: `entrypoint.sh` writes `server_identity.json` and exports `SERVER_ID` so each node keeps a stable ID across restarts or host reboots.
+- Load balancing: place Nginx/HAProxy/Traefik in front of multiple backend containers and health-check `/api/health`. Persist the mounted volumes per node.
 
-## Load Balancing and Visibility
-- Put Nginx/Traefik in front of two or more backend containers:
-  - Upstream: `backend1:5001`, `backend2:5001`.
-  - Health check: `/api/health` every 5s.
-- Node list page (future UI): fetch `/api/nodes` to show status, last_seen, version.
-- Metrics: expose Prometheus metrics via a small `/metrics` endpoint or sidecar (Node exporter if you prefer host metrics).
+## Operate and verify
+- Health check: `curl -fsSL http://<host>:<port>/api/health` and `/api/ping`.
+- Logs: `docker compose -f <DATA_DIR>/docker-compose.yml logs -f backend`.
+- Data: SQLite lives at `<DATA_DIR>/scans.db`; node identity at `<DATA_DIR>/server_identity.json`.
+- Updates: rebuild/pull the image, then rerun the installer or simply `docker compose -f <DATA_DIR>/docker-compose.yml up -d` to pick up the new image tag.
 
-## Feasibility and Suggested Order (under 2 hours for docs + scaffolding)
-1) **Docs (this file) + sample Dockerfile and compose** (no code changes yet).
-2) Add a `Dockerfile` and `docker-compose.yml` to the repo (single-container mode first).
-3) Add a simple `NODE_ID` env and `PRIMARY_NODE_URL` placeholder in config.
-4) Later: implement `/api/nodes/register` and `/api/nodes/heartbeat` to populate a `nodes` table.
-5) Add Nginx reverse proxy config (optional, after two nodes exist).
-6) Add CI to build and push `ghcr.io/.../cloudx-backend:latest` on `main`.
+## Optional: reverse proxy (Nginx) for frontend + backend + Cloudflare tunnel
+- Files: `deploy/reverse-proxy/docker-compose.yml` and `deploy/reverse-proxy/nginx.conf.template`.
+- Defaults: proxies `/api/` to `http://host.docker.internal:5001` (backend) and everything else to `http://host.docker.internal:3000` (frontend). Publishes port `80`.
+- Linux host: `host.docker.internal` is mapped via `extra_hosts: host-gateway`.
+- Run it (from repo root or copy the folder to the server):
+  ```bash
+  cd deploy/reverse-proxy
+  docker compose up -d
+  curl -fsSL http://localhost/_proxy/health   # proxy health
+  ```
+- To point Nginx at different upstreams (e.g., another host or container network), set envs before `docker compose up -d`:
+  ```bash
+  BACKEND_UPSTREAM=http://192.168.100.47:5001 FRONTEND_UPSTREAM=http://192.168.100.47:3000 docker compose up -d
+  ```
+- Cloudflare Tunnel: point the tunnel to the proxy’s published port (default 80). The proxy stays as the single entrypoint; backend/frontend stay inside.
 
-## Risks and Notes
-- Scanners (nmap/zmap/masscan) may need raw socket access; container must run with `--cap-add=NET_RAW` or on host network, or install scanners on host and mount in if needed.
-- SQLite is not multi-node friendly; move to Postgres before serious multi-node use.
-- Ensure auth before exposing node registration/heartbeat endpoints (Clerk JWT validation on backend).
-- Keep secrets out of images; rely on env vars or Docker secrets.
+## CI/CD: build and push backend image (GHCR)
+- Workflow: `.github/workflows/backend-image.yml` builds `cloudx-flask-backend` and pushes to GHCR on pushes to `main`.
+- Authentication uses the built-in `${{ secrets.GITHUB_TOKEN }}`; no extra secrets are required for publishing to GitHub Container Registry in this repository.
+- Image tags published:
+  - `ghcr.io/<owner>/cloudx-backend:latest`
+  - `ghcr.io/<owner>/cloudx-backend:<git-sha>`
+
+## CI/CD: build and push frontend image (GHCR)
+- Workflow: `.github/workflows/frontend-image.yml` builds the Vite frontend via `Dockerfile.frontend` and pushes to GHCR on pushes to `main`.
+- Build arg `FRONTEND_API_BASE_URL` controls the API URL baked at build time (default `http://localhost:5001`). Set repository variable `FRONTEND_API_BASE_URL` to point at your backend (e.g., `http://192.168.100.47:5001`).
+- Authentication uses `${{ secrets.GITHUB_TOKEN }}` for GHCR login.
+- Image tags published:
+  - `ghcr.io/<owner>/cloudx-frontend:latest`
+  - `ghcr.io/<owner>/cloudx-frontend:<git-sha>`
+
+## Server-side pull/update helpers
+- Backend: `deploy/pull-backend.sh`
+  ```bash
+  COMPOSE_FILE=/opt/cloudx-backend/docker-compose.yml bash pull-backend.sh
+  ```
+  Compose must reference `ghcr.io/<owner>/cloudx-backend:latest` (set during installer run).
+
+- Frontend: `deploy/pull-frontend.sh`
+  ```bash
+  COMPOSE_FILE=/opt/cloudx-frontend/docker-compose.yml bash pull-frontend.sh
+  ```
+  Compose example lives at `deploy/frontend/docker-compose.yml` (replace `REPLACE_ME_OWNER` with your GHCR owner and ensure the backend URL baked at build time matches your environment).
