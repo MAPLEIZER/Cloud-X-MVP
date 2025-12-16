@@ -2,6 +2,8 @@
 
 This document outlines the development roadmap for the Cloud-X Security Platform, moving from the current MVP to a comprehensive enterprise security solution for SMBs.
 
+For a detailed execution timeline and implementation steps (including the AI-powered SOC vision), see `Documentation/IMPLEMENTATION_PLAN.md`.
+
 ## ✅ Completed (MVP Phase)
 
 -   **Core Infrastructure**:
@@ -66,5 +68,6 @@ The long-term goal is to build a unified **Security Operation Center (SOC)** pla
 -   **DLP**: Data Loss Prevention module to detect sensitive data exfiltration.
 -   **EUBA**: Entity and User Behavior Analytics for anomaly detection.
 -   **AI & Analytics**:
+    -   AI-assisted SOC triage and case management (analyst copilot).
     -   Automated incident response (SOAR).
     -   AI-driven threat hunting and prediction.
