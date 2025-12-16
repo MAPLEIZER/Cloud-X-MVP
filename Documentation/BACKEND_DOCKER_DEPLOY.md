@@ -14,7 +14,7 @@ This document describes how to refactor the Flask backend for containerized depl
 - Working directory: `/app`
 - Install system deps: `build-essential` (for pip builds), `nmap`, `zmap`, `masscan` (optional; can be installed on host and mounted in if root requirements block container).
 - Copy backend code: `cloudx-flask-backend/`
-- Install Python deps: `pip install -r requirements.txt`
+- Install Python deps: `pip install -r requirements.txt && pip install gunicorn gevent`
 - Entrypoint (MVP): `gunicorn -w 4 -k gevent -b 0.0.0.0:5001 app:app`
 - Volumes (optional):
   - `/data/cloudx` for SQLite or logs (prefer external DB for multi-node).
