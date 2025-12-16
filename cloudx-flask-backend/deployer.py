@@ -1,8 +1,12 @@
 
-import paramiko
-import winrm
+import logging
 import os
 import time
+
+import paramiko
+import winrm
+
+logger = logging.getLogger(__name__)
 
 class AgentDeployer:
     def __init__(self, scripts_dir):
@@ -155,10 +159,6 @@ class AgentDeployer:
             else:
                 return {'status': 'error', 'error': result.std_err.decode(), 'output': result.std_out.decode()}
 
-        except Exception as e:
-            raise e # Re-raise the exception after WinRM operation fails
-
-        except Exception as e:
-            import logging
-            logging.exception("Exception during WinRM execution")
+        except Exception:
+            logger.exception("Exception during WinRM execution")
             return {'status': 'error', 'error': 'An internal error occurred during agent deployment.'}
