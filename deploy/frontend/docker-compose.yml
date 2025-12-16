@@ -1,0 +1,10 @@
+services:
+  frontend:
+    image: ghcr.io/MAPLEIZER/cloudx-frontend:latest
+    container_name: cloudx-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    environment:
+      # For reference only; Vite reads API URL at build time. Change the build arg FRONTEND_API_URL in CI to point at your backend.
+      - VITE_API_URL=http://192.168.100.47:5001
