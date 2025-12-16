@@ -18,6 +18,7 @@ This document serves as a central index for all documentation within the Cloud-X
 - [Backend README](../cloudx-flask-backend/README.md): Setup and usage for the Flask backend.
 - [Backend Configuration](BACKEND_CONFIG.md): Detailed backend setup, database schema, and deployment notes.
 - [Backend & Agents Technical Docs](BACKEND_AGENTS.md): Detailed documentation on `deployer.py`, agent scripts, and system monitoring.
+- [Backend Docker Deploy](BACKEND_DOCKER_DEPLOY.md): How to containerize and deploy the backend on VPS nodes with multi-node visibility.
 
 ## Security Agents
 - [Security Agent README](../cloudx-security-agent/README.md): Usage of the standalone Wazuh agent installer.
