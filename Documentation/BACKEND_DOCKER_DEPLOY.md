@@ -87,8 +87,10 @@ FLASK_DEBUG=0
 DATABASE_URL=sqlite:////data/cloudx/scans.db
 PORT=5001
 PRIMARY_NODE_URL=http://primary-node:5001
-NODE_ID=$(hostname)
+NODE_ID=backend-primary
 ```
+
+> Note: Customize `NODE_ID` per node (e.g., `backend-primary`, `backend-worker-1`). If you prefer dynamic values, inject `NODE_ID` via an entrypoint or wrapper script that runs `export NODE_ID=$(hostname)` before launching the app.
 
 ### Building and Publishing the Image
 Locally (or in CI):
