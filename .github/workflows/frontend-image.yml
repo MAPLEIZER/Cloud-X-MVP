@@ -15,6 +15,7 @@ on:
 env:
   IMAGE_NAME: cloudx-frontend
   REGISTRY: ghcr.io
+  REGISTRY_OWNER: ${{ toLower(github.repository_owner) }}
   FRONTEND_API_BASE_URL: ${{ vars.FRONTEND_API_BASE_URL || 'http://localhost:5001' }}
 
 jobs:

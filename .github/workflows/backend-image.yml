@@ -11,6 +11,7 @@ on:
 env:
   IMAGE_NAME: cloudx-backend
   REGISTRY: ghcr.io
+  REGISTRY_OWNER: ${{ toLower(github.repository_owner) }}
 
 jobs:
   build-and-push:
