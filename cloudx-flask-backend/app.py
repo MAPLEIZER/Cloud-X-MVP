@@ -12,6 +12,7 @@ import subprocess
 import psutil
 from ping3 import ping as ping_host
 from deployer import AgentDeployer
+import paramiko
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -162,6 +163,18 @@ def start_scan():
 
     if not target:
         return jsonify({'error': 'Target is required'}), 400
+
+    allowed_tools = {'nmap', 'zmap', 'masscan'}
+    if tool not in allowed_tools:
+        return jsonify({'error': f"Unsupported scanning tool '{tool}'. Allowed tools are: {', '.join(sorted(allowed_tools))}"}), 400
+
+    if port is not None:
+        try:
+            port = int(port)
+            if port < 1 or port > 65535:
+                raise ValueError
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Port must be an integer between 1 and 65535 when provided.'}), 400
 
     new_scan = Scan(tool=tool, target=target, scan_type=scan_type, status='submitted')
     db.session.add(new_scan)
