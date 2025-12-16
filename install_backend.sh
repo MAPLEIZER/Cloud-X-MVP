@@ -35,10 +35,10 @@ prompt() {
 }
 
 compose_cmd() {
-  if command -v docker-compose >/dev/null 2>&1; then
-    echo "docker-compose"
-  elif docker compose version >/dev/null 2>&1; then
+  if docker compose version >/dev/null 2>&1; then
     echo "docker compose"
+  elif command -v docker-compose >/dev/null 2>&1; then
+    echo "docker-compose"
   else
     echo ""
   fi
@@ -48,6 +48,11 @@ banner
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is not installed. Install it first (e.g., curl -fsSL https://get.docker.com | sh)" >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 is required for identity generation. Install it and retry." >&2
   exit 1
 fi
 
@@ -63,11 +68,12 @@ prompt HOST_PORT "5001" "Host port to expose the API on"
 prompt NODE_ROLE "primary" "Node role (primary/worker)"
 prompt NODE_ID "$(hostname -s)" "Node ID to persist (maps to server_identity.json)"
 
-PRIMARY_DEFAULT="http://$(hostname -f):5001"
+HOSTNAME_RESOLVED="$(hostname -f 2>/dev/null || hostname -s 2>/dev/null || echo "127.0.0.1")"
+PRIMARY_DEFAULT="http://${HOSTNAME_RESOLVED:-127.0.0.1}:5001"
 if [[ "$NODE_ROLE" == "worker" ]]; then
   prompt PRIMARY_NODE_URL "$PRIMARY_DEFAULT" "Primary node URL (workers only)"
 else
-  PRIMARY_NODE_URL="http://localhost:5001"
+  PRIMARY_NODE_URL="$PRIMARY_DEFAULT"
 fi
 
 prompt ADD_NET_RAW "y" "Add NET_RAW capability for scanners (recommended)?"
@@ -78,10 +84,13 @@ cd "$DATA_DIR"
 
 if [[ -n "$IMAGE_TAR" ]]; then
   docker load -i "$IMAGE_TAR"
-elif docker images -q "$IMAGE" >/dev/null 2>&1 && [[ -n "$(docker images -q "$IMAGE")" ]]; then
+elif [[ -n "$(docker images -q "$IMAGE" 2>/dev/null)" ]]; then
   echo "Using existing image: $IMAGE"
 else
-  docker pull "$IMAGE" || true
+  if ! docker pull "$IMAGE"; then
+    echo "Warning: Failed to pull $IMAGE. Ensure the image is available locally or the registry is accessible." >&2
+    exit 1
+  fi
 fi
 
 # Ensure bind targets exist as files to avoid mount type conflicts
@@ -90,6 +99,7 @@ touch scans.db
 # Ensure server_identity.json is valid JSON with a server_id
 python3 - <<'PY'
 import json, uuid, datetime, os, sys
+from datetime import timezone
 path = "server_identity.json"
 data = None
 if os.path.exists(path):
@@ -101,7 +111,7 @@ if os.path.exists(path):
 if not data or "server_id" not in data:
     data = {
         "server_id": str(uuid.uuid4()),
-        "created_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "created_at": datetime.datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     with open(path, "w") as f:
         json.dump(data, f)
@@ -131,8 +141,8 @@ services:
     env_file:
       - .env
     volumes:
-      - "$DATA_DIR/scans.db:/app/scans.db"
-      - "$DATA_DIR/server_identity.json:/app/server_identity.json"
+      - "${DATA_DIR}/scans.db:/app/scans.db"
+      - "${DATA_DIR}/server_identity.json:/app/server_identity.json"
 $CAP_RAW_BLOCK
 EOF
 

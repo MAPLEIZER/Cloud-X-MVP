@@ -5,6 +5,5 @@ services:
     restart: unless-stopped
     ports:
       - "3000:80"
-    environment:
-      # For reference only; Vite reads API URL at build time. Change the build arg FRONTEND_API_BASE_URL in CI to point at your backend.
-      - VITE_API_BASE_URL=http://192.168.100.47:5001
+    # Note: API URL is baked into the image at build time via FRONTEND_API_BASE_URL build arg.
+    # To change it, rebuild the image with a different FRONTEND_API_BASE_URL value.
