@@ -216,7 +216,7 @@ sudo bash install_backend.sh
 
 ## CI/CD: build and push frontend image (GHCR)
 - Workflow: `.github/workflows/frontend-image.yml` builds the Vite frontend via `Dockerfile.frontend` and pushes to GHCR on pushes to `main`.
-- Build arg `FRONTEND_API_URL` controls the API URL baked at build time (default `http://localhost:5001`). Set repository variable `FRONTEND_API_URL` to point at your backend (e.g., `http://192.168.100.47:5001`).
+- Build arg `FRONTEND_API_BASE_URL` controls the API URL baked at build time (default `http://localhost:5001`). Set repository variable `FRONTEND_API_BASE_URL` to point at your backend (e.g., `http://192.168.100.47:5001`).
 - Configure the same `GHCR_TOKEN` secret for GHCR login.
 - Image tags published:
   - `ghcr.io/<owner>/cloudx-frontend:latest`

@@ -3,8 +3,8 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 # Build-time API URL (used by Vite at build time)
-ARG FRONTEND_API_URL=http://localhost:5001
-ENV VITE_API_URL=${FRONTEND_API_URL}
+ARG FRONTEND_API_BASE_URL=http://localhost:5001
+ENV VITE_API_BASE_URL=${FRONTEND_API_BASE_URL}
 
 # Install pnpm and dependencies
 RUN npm install -g pnpm

@@ -16,7 +16,7 @@ env:
   IMAGE_NAME: cloudx-frontend
   REGISTRY: ghcr.io
   REGISTRY_OWNER: ${{ github.repository_owner }}
-  FRONTEND_API_URL: ${{ vars.FRONTEND_API_URL || 'http://localhost:5001' }}
+  FRONTEND_API_BASE_URL: ${{ vars.FRONTEND_API_BASE_URL || 'http://localhost:5001' }}
 
 jobs:
   build-and-push:
@@ -46,7 +46,7 @@ jobs:
           file: ./Dockerfile.frontend
           push: true
           build-args: |
-            FRONTEND_API_URL=${{ env.FRONTEND_API_URL }}
+            FRONTEND_API_BASE_URL=${{ env.FRONTEND_API_BASE_URL }}
           tags: |
             ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:latest
             ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
@@ -55,7 +55,7 @@ jobs:
 
       - name: Summary
         run: |
-          echo "Built with FRONTEND_API_URL=${FRONTEND_API_URL}"
+          echo "Built with FRONTEND_API_BASE_URL=${FRONTEND_API_BASE_URL}"
           echo "Pushed:"
           echo "  ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:latest"
           echo "  ${{ env.REGISTRY }}/${{ env.REGISTRY_OWNER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
