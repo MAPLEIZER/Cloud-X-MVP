@@ -363,7 +363,8 @@ def deploy_node():
     # Use Paramiko to run this
     try:
         ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.load_system_host_keys()
+        # The default policy (RejectPolicy) is secure and will not add unknown hosts
         ssh.connect(target, username=username, password=password)
         
         stdin, stdout, stderr = ssh.exec_command(deploy_script)
