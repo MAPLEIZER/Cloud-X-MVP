@@ -63,7 +63,7 @@ if [[ -z "$COMPOSE_BIN" ]]; then
 fi
 
 prompt DATA_DIR "/opt/cloudx-backend" "Where should data/config live"
-prompt IMAGE "cloudx-backend:latest" "Docker image to run (pulled or loaded locally)"
+prompt IMAGE "ghcr.io/mapleizer/cloudx-backend:latest" "Docker image to run (pulled or loaded locally; GHCR owner must be lowercase)"
 prompt HOST_PORT "5001" "Host port to expose the API on"
 prompt NODE_ROLE "primary" "Node role (primary/worker)"
 prompt NODE_ID "$(hostname -s)" "Node ID to persist (maps to server_identity.json)"

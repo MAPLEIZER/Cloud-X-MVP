@@ -32,7 +32,7 @@ Borrowed Cloud-X ASCII art (from the agent installer) for the installer banner:
 - Identity + persistence: `entrypoint.sh` creates `server_identity.json` (UUID) and exports `SERVER_ID`; volumes are expected for `scans.db` and `server_identity.json` so nodes keep identity across restarts.
 - Agent deploy helper: `deployer.py` ships the scripts in `cloudx-flask-backend/scripts/{linux,windows,mac}` to remote hosts (Wazuh agent install/cleanup).
 - Docker build: `cloudx-flask-backend/Dockerfile` uses `python:3.9-slim`, installs `nmap` + `iputils-ping` + `curl`, copies the app, and runs `entrypoint.sh`.
-- Compose default: `cloudx-flask-backend/docker-compose.yml` maps `5001:5001`, mounts `./scans.db` and `./server_identity.json`, restarts unless stopped. Scanners need raw sockets (`NET_RAW`) when using masscan/zmap/nmap; add the capability when running in Docker.
+- Compose default: `cloudx-flask-backend/docker-compose.yml` runs `ghcr.io/mapleizer/cloudx-backend:latest`, maps `5001:5001`, mounts `./scans.db` and `./server_identity.json`, restarts unless stopped. Scanners need raw sockets (`NET_RAW`) when using masscan/zmap/nmap; add the capability when running in Docker.
 
 ## Build or publish the image (run from repo root)
 ```bash
@@ -92,7 +92,7 @@ sudo bash /tmp/install_backend.sh
 
 ## CI/CD: build and push backend image (GHCR)
 - Workflow: `.github/workflows/backend-image.yml` builds `cloudx-flask-backend` and pushes to GHCR on pushes to `main`.
-- Authentication uses the built-in `${{ secrets.GITHUB_TOKEN }}`; no extra secrets are required for publishing to GitHub Container Registry in this repository.
+- Authentication uses `${{ secrets.GHCR_TOKEN }}` for GHCR login.
 - Image tags published:
   - `ghcr.io/<owner>/cloudx-backend:latest`
   - `ghcr.io/<owner>/cloudx-backend:<git-sha>`
@@ -100,7 +100,7 @@ sudo bash /tmp/install_backend.sh
 ## CI/CD: build and push frontend image (GHCR)
 - Workflow: `.github/workflows/frontend-image.yml` builds the Vite frontend via `Dockerfile.frontend` and pushes to GHCR on pushes to `main`.
 - Build arg `FRONTEND_API_BASE_URL` controls the API URL baked at build time (default `http://localhost:5001`). Set repository variable `FRONTEND_API_BASE_URL` to point at your backend (e.g., `http://192.168.100.47:5001`).
-- Authentication uses `${{ secrets.GITHUB_TOKEN }}` for GHCR login.
+- Authentication uses `${{ secrets.GHCR_TOKEN }}` for GHCR login.
 - Image tags published:
   - `ghcr.io/<owner>/cloudx-frontend:latest`
   - `ghcr.io/<owner>/cloudx-frontend:<git-sha>`
@@ -116,4 +116,4 @@ sudo bash /tmp/install_backend.sh
   ```bash
   COMPOSE_FILE=/opt/cloudx-frontend/docker-compose.yml bash pull-frontend.sh
   ```
-  Compose example lives at `deploy/frontend/docker-compose.yml` (replace `REPLACE_ME_OWNER` with your GHCR owner and ensure the backend URL baked at build time matches your environment).
+  Compose example lives at `deploy/frontend/docker-compose.yml` (owner must be lowercase for GHCR; ensure the backend URL baked at build time matches your environment).

@@ -14,6 +14,9 @@ This document serves as a central index for all documentation within the Cloud-X
 ## Frontend
 - [Frontend Documentation](FRONTEND.md): Architecture, components, routing, API client, and development workflow.
 
+## CI / Docker
+- [GitHub Docker Builds](GITHUB_DOCKER_BUILDS.md): What the GitHub Actions Docker workflows build/push and how it supports deployments.
+
 ## Backend & API
 - [Backend README](../cloudx-flask-backend/README.md): Setup and usage for the Flask backend.
 - [Backend Configuration](BACKEND_CONFIG.md): Detailed backend setup, database schema, and deployment notes.

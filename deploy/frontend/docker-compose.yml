@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: ghcr.io/MAPLEIZER/cloudx-frontend:latest
+    image: ghcr.io/mapleizer/cloudx-frontend:latest
     container_name: cloudx-frontend
     restart: unless-stopped
     ports:

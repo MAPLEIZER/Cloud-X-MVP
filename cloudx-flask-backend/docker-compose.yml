@@ -2,8 +2,7 @@ version: '3.8'
 
 services:
   backend:
-    build: .
-    image: cloudx-backend:latest
+    image: ghcr.io/mapleizer/cloudx-backend:latest
     container_name: cloudx-backend
     ports:
       - "5001:5001"
