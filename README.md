@@ -66,8 +66,11 @@ Cloud-X-MVP/
 - Node.js & npm/pnpm
 - Python 3.10+
 - Redis server (for backend tasks)
+- Docker + Docker Compose (optional, for the Docker install path)
 
 ### Installation
+
+#### Option A: Local development (run from source)
 
 1.  **Clone the repository**
 
@@ -76,23 +79,72 @@ Cloud-X-MVP/
     cd Cloud-X-MVP
     ```
 
-2.  **Start the Backend**
+2.  **Install frontend dependencies**
 
     ```bash
-    # See Documentation/BACKEND_AGENTS.md for full setup
+    pnpm install
+    # or
+    npm install
+    ```
+
+3.  **Set up the backend (Python)**
+
+    See `cloudx-flask-backend/README.md` for full details.
+
+    ```bash
+    cd cloudx-flask-backend
+    python -m venv venv
+    # Windows PowerShell:
+    .\\venv\\Scripts\\Activate.ps1
+    # macOS/Linux:
+    # source venv/bin/activate
+    pip install -r requirements.txt
+    cd ..
+    ```
+
+4.  **Start the backend**
+
+    ```bash
+    # Backend must be set up first (venv + requirements)
     npm run dev:backend
     ```
 
-3.  **Start the Frontend**
+5.  **Start the frontend**
 
     ```bash
+    pnpm dev
+    # or
     npm run dev
     ```
 
-4.  **Run Both (Recommended)**
+6.  **Run both (recommended)**
     ```bash
+    pnpm dev:all
+    # or
     npm run dev:all
     ```
+
+#### Option B: Docker (pull prebuilt images from GHCR)
+
+This runs the published images built by GitHub Actions (faster than building locally).
+
+1.  **Start the backend**
+    ```bash
+    docker compose -f cloudx-flask-backend/docker-compose.yml up -d
+    ```
+
+2.  **Start the frontend**
+    ```bash
+    docker compose -f deploy/frontend/docker-compose.yml up -d
+    ```
+
+3.  **Verify**
+   - Frontend: `http://localhost:3000`
+   - Backend health: `http://localhost:5001/api/health`
+
+Notes:
+- Images are `ghcr.io/mapleizer/cloudx-backend:latest` and `ghcr.io/mapleizer/cloudx-frontend:latest`.
+- The frontend API base URL is baked into the image at build time; see `Documentation/GITHUB_DOCKER_BUILDS.md`.
 
 ## 🔮 Future Roadmap
 
