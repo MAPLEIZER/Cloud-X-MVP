@@ -340,6 +340,7 @@ def deploy_node():
     target = data.get('target')
     username = data.get('username')
     password = data.get('password')
+    host_key_line = data.get('host_key')
     
     if not all([target, username, password]):
         return jsonify({'error': 'Missing credentials'}), 400
@@ -363,7 +364,20 @@ def deploy_node():
     # Use Paramiko to run this
     try:
         ssh = paramiko.SSHClient()
-        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.load_system_host_keys()
+        host_keys = ssh.get_host_keys()
+
+        if host_key_line:
+            try:
+                host_key_entry = paramiko.HostKeyEntry.from_line(host_key_line)
+                if host_key_entry and host_key_entry.hostname_matches(target):
+                    host_keys.add(target, host_key_entry.key.get_name(), host_key_entry.key)
+                else:
+                    return jsonify({'error': 'Provided host key does not match target host.'}), 400
+            except Exception:
+                return jsonify({'error': 'Invalid host_key format. Provide a known_hosts formatted line.'}), 400
+
+        # The default policy (RejectPolicy) is secure and will not add unknown hosts
         ssh.connect(target, username=username, password=password)
         
         stdin, stdout, stderr = ssh.exec_command(deploy_script)
@@ -377,6 +391,12 @@ def deploy_node():
         else:
              return jsonify({'error': 'Node deployment failed', 'details': out}), 500
              
+    except paramiko.SSHException as e:
+        logger.warning("SSHException during node deployment: %s", e)
+        return jsonify({
+            'error': 'SSH host key verification failed.',
+            'details': 'Provide a trusted host_key in known_hosts format for this target.'
+        }), 400
     except Exception as e:
         logger.exception("Exception during node deployment")
         return jsonify({'error': 'An internal error has occurred while deploying the node.'}), 500
