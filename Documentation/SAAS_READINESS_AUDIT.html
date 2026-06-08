@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cloud-X — Project Status &amp; SaaS-Readiness Roadmap</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0e14; --panel:#11161f; --panel2:#161c27; --line:#222b39;
+    --ink:#e6edf3; --ink2:#aab6c4; --ink3:#6b7888;
+    --accent:#38e1c4; --accent2:#5aa2ff;
+    --p0:#ff9f45; --p1:#ffd166; --ok:#3ddc91; --stub:#6b7888;
+    --mono:'JetBrains Mono',monospace; --sans:'Inter',sans-serif; --disp:'Space Grotesk',sans-serif;
+  }
+  html.light{ --bg:#f5f7fa; --panel:#ffffff; --panel2:#eef2f7; --line:#e1e7ef; --ink:#10151c; --ink2:#3c4a5a; --ink3:#7a8696; --accent:#0c9a82; --accent2:#2f6fed; --p0:#c9690a; --p1:#b88600; --ok:#11975f; --stub:#8a96a6; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;transition:background .3s,color .3s}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 6%}
+  a{color:var(--accent2);text-decoration:none}
+  code,.mono{font-family:var(--mono);font-size:.86em}
+  h1,h2,h3,h4{font-family:var(--disp);font-weight:600;line-height:1.2;letter-spacing:-.01em}
+  .topbar{position:sticky;top:0;z-index:50;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+  .topbar .wrap{display:flex;align-items:center;justify-content:space-between;height:54px}
+  .brand{font-family:var(--disp);font-weight:700;font-size:15px}
+  .brand .dot{color:var(--accent)}
+  .toggle{font-family:var(--mono);font-size:12px;color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer}
+  .toggle:hover{color:var(--ink);border-color:var(--accent)}
+  .hero{padding:64px 0 38px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+  .hero h1{font-size:clamp(28px,5vw,46px);margin:16px 0 14px;font-weight:700}
+  .hero p.lead{font-size:18px;color:var(--ink2);max-width:680px}
+  .meta{margin-top:20px;display:flex;gap:22px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--ink3)}
+  .meta b{color:var(--ink2);font-weight:500}
+  .verdict{display:grid;grid-template-columns:1.5fr 1fr;gap:22px;margin:34px 0 6px}
+  @media(max-width:760px){.verdict{grid-template-columns:1fr}}
+  .vcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px}
+  .vcard h3{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--ink3);margin-bottom:12px;font-family:var(--mono);font-weight:500}
+  .gauge{display:flex;align-items:baseline;gap:10px}
+  .gauge .num{font-family:var(--disp);font-size:44px;font-weight:700;color:var(--accent)}
+  .gauge .of{color:var(--ink3);font-size:14px}
+  .bar{height:8px;border-radius:6px;background:var(--panel2);margin-top:14px;overflow:hidden}
+  .bar > i{display:block;height:100%;width:18%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:6px}
+  .vcard ul{list-style:none;margin-top:6px}
+  .vcard li{padding:7px 0;border-top:1px solid var(--line);font-size:13.5px;color:var(--ink2)}
+  .vcard li:first-child{border-top:none}
+  .vcard li b{color:var(--ink)}
+  section{padding:44px 0;border-bottom:1px solid var(--line)}
+  .sec-h{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .sec-h .ix{font-family:var(--mono);font-size:13px;color:var(--accent);border:1px solid var(--line);border-radius:7px;padding:3px 9px}
+  section h2{font-size:clamp(22px,3.4vw,29px)}
+  .sub{color:var(--ink2);margin:10px 0 24px;max-width:760px}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink3);font-weight:500}
+  td b{color:var(--ink)}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:500;padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .p-real{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok);border:1px solid color-mix(in srgb,var(--ok) 35%,transparent)}
+  .p-part{background:color-mix(in srgb,var(--p1) 15%,transparent);color:var(--p1);border:1px solid color-mix(in srgb,var(--p1) 35%,transparent)}
+  .p-stub{background:color-mix(in srgb,var(--stub) 16%,transparent);color:var(--ink2);border:1px solid var(--line)}
+  .hard{display:grid;grid-template-columns:auto 1fr;gap:14px;padding:15px 0;border-top:1px solid var(--line)}
+  .hard:first-of-type{border-top:none}
+  .sev{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.04em;padding:4px 9px;border-radius:6px;height:fit-content;white-space:nowrap}
+  .s-p0{background:color-mix(in srgb,var(--p0) 16%,transparent);color:var(--p0);border:1px solid color-mix(in srgb,var(--p0) 40%,transparent)}
+  .s-p1{background:color-mix(in srgb,var(--p1) 14%,transparent);color:var(--p1);border:1px solid color-mix(in srgb,var(--p1) 36%,transparent)}
+  .hard h4{font-size:15px;margin-bottom:4px}
+  .hard p{font-size:13.5px;color:var(--ink2)}
+  .hard .area{font-family:var(--mono);font-size:11.5px;color:var(--ink3);margin-top:3px}
+  .phase{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px;margin-top:20px;position:relative;overflow:hidden}
+  .phase::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(var(--accent),var(--accent2))}
+  .phase.p2::before{background:linear-gradient(var(--accent2),#a06bff)}
+  .phase-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px}
+  .phase-top .tag{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.1em;text-transform:uppercase}
+  .phase.p2 .tag{color:var(--accent2)}
+  .phase h3{font-size:22px;margin:4px 0}
+  .phase .goal{color:var(--ink2);font-size:14px;max-width:680px}
+  .est{font-family:var(--mono);font-size:12px;color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 13px;white-space:nowrap}
+  .ws{margin-top:18px;border-top:1px solid var(--line);padding-top:16px}
+  .ws h4{font-size:14.5px;display:flex;gap:9px;align-items:center}
+  .ws h4 .k{font-family:var(--mono);font-size:11px;color:var(--bg);background:var(--accent);border-radius:5px;padding:2px 7px;font-weight:600}
+  .phase.p2 .ws h4 .k{background:var(--accent2)}
+  .ws ul{list-style:none;margin:9px 0 4px}
+  .ws li{font-size:13.5px;color:var(--ink2);padding:5px 0 5px 18px;position:relative}
+  .ws li::before{content:"▸";position:absolute;left:0;color:var(--accent)}
+  .phase.p2 .ws li::before{color:var(--accent2)}
+  .ws li code{background:var(--panel2);padding:1px 6px;border-radius:5px;color:var(--ink)}
+  .dod{margin-top:16px;background:var(--panel2);border:1px dashed var(--line);border-radius:10px;padding:13px 15px}
+  .dod .lab{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ok);margin-bottom:5px}
+  .dod p{font-size:13px;color:var(--ink2)}
+  .sprint .row{display:flex;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+  .sprint .row:first-child{border-top:none}
+  .sprint .n{font-family:var(--disp);font-weight:700;color:var(--accent);font-size:15px;min-width:24px}
+  .sprint .row p{font-size:14px;color:var(--ink2)}
+  .sprint .row p b{color:var(--ink)}
+  .defer{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+  .defer span{font-family:var(--mono);font-size:12px;color:var(--ink2);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+  .note{font-size:12.5px;color:var(--ink3);margin-top:28px;padding-top:18px;border-top:1px solid var(--line);font-family:var(--mono)}
+  footer{padding:32px 0 56px;color:var(--ink3);font-size:13px}
+</style>
+</head>
+<body>
+<div class="topbar"><div class="wrap">
+  <div class="brand">Cloud<span class="dot">·</span>X &nbsp;<span style="color:var(--ink3);font-weight:400">Status &amp; Roadmap</span></div>
+  <button class="toggle" id="themeBtn">◐ Light</button>
+</div></div>
+
+<div class="wrap">
+  <div class="hero">
+    <div class="eyebrow">Internal Engineering · Status &amp; SaaS-Readiness</div>
+    <h1>Cloud-X: current state &amp; the path to a multi-tenant SaaS</h1>
+    <p class="lead">An honest snapshot of what’s built today, the hardening required before public exposure, and a two-phase plan to reach a billable, multi-tenant managed-security product.</p>
+    <div class="meta">
+      <span><b>Repo</b> &nbsp;Cloud-X-MVP</span>
+      <span><b>Stack</b> &nbsp;React 19 · TanStack · Flask · SQLite→Postgres</span>
+      <span><b>Updated</b> &nbsp;Jun 2026</span>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <div class="vcard">
+      <h3>Where it stands</h3>
+      <p style="font-size:15px;color:var(--ink2)">A <b style="color:var(--ink)">working single-tenant prototype</b> with a strong frontend foundation and a real, end-to-end network-scanning feature. The work that defines a SaaS — server-side auth, tenant isolation, the Wazuh SIEM core, durable async, and billing — is the focus of the roadmap below. The system is a functional prototype on a trusted network; <b style="color:var(--ink)">authentication, tenant isolation, and hardening are in progress</b> before public or multi-tenant exposure.</p>
+    </div>
+    <div class="vcard">
+      <h3>SaaS-readiness</h3>
+      <div class="gauge"><span class="num">~18%</span><span class="of">to multi-tenant SaaS</span></div>
+      <div class="bar"><i></i></div>
+      <ul style="margin-top:14px">
+        <li><b>Strong:</b>&nbsp;UI shell, scan engine, CI</li>
+        <li><b>Missing:</b>&nbsp;server-side authz, tenancy, SIEM core, billing</li>
+        <li><b>Now:</b>&nbsp;hardening &amp; the Wazuh connector</li>
+      </ul>
+    </div>
+  </div>
+
+  <section>
+    <div class="sec-h"><span class="ix">01</span><h2>What’s built today</h2></div>
+    <p class="sub">Ground truth from the source, so the roadmap is grounded in reality rather than the original aspirational README.</p>
+    <table>
+      <tr><th>Capability</th><th>Status</th><th>Notes</th></tr>
+      <tr><td><b>Frontend shell</b><br><span class="mono">layout · routing · theming · Clerk sign-in</span></td><td><span class="pill p-real">Built</span></td><td>React 19 + TanStack Router/Query + Tailwind 4. Clerk sign-in wired and enforced in the UI.</td></tr>
+      <tr><td><b>Network scanning</b><br><span class="mono">nmap · zmap · masscan</span></td><td><span class="pill p-real">Built</span></td><td>End-to-end: jobs, progress, results, history. The most complete feature.</td></tr>
+      <tr><td><b>System monitor</b></td><td><span class="pill p-part">Partial</span></td><td>Local metrics via <code>psutil</code>; remote = ping; some values still placeholder.</td></tr>
+      <tr><td><b>Agent deploy — Linux/macOS</b></td><td><span class="pill p-part">Partial</span></td><td>SSH bundle flow present; needs host-key handling &amp; input hardening.</td></tr>
+      <tr><td><b>Agent deploy — Windows</b></td><td><span class="pill p-stub">Scaffold</span></td><td>WinRM path is a stub. The standalone <code>Cloud-X-security-agent</code> installer is solid and should become the canonical path.</td></tr>
+      <tr><td><b>Wazuh “single pane”</b><br><span class="mono">the core value prop</span></td><td><span class="pill p-stub">Not built</span></td><td>No backend Wazuh connector yet; the page is a placeholder. Highest-value Phase 1 item.</td></tr>
+      <tr><td><b>Advanced (scripts / SOAR)</b></td><td><span class="pill p-stub">Not built</span></td><td>Placeholder.</td></tr>
+      <tr><td><b>Billing</b></td><td><span class="pill p-stub">Not built</span></td><td>Placeholder; no payment integration yet. Tiers defined on paper.</td></tr>
+      <tr><td><b>Servers / multi-node</b></td><td><span class="pill p-stub">Scaffold</span></td><td>Browser-local node list; no server-side tenant/node model yet.</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <div class="sec-h"><span class="ix">02</span><h2>Architecture: today → target</h2></div>
+    <div class="verdict" style="margin-top:16px">
+      <div class="vcard">
+        <h3>Today</h3>
+        <ul>
+          <li>Single Flask service · <b>SQLite</b> file</li>
+          <li>Background scans on <b>worker threads</b> + in-memory state</li>
+          <li>Access control <b>client-side only</b> (no server-side auth yet)</li>
+          <li><b>No tenant model</b> — one shared dataset</li>
+          <li>“Nodes” tracked per-browser in <code>localStorage</code></li>
+        </ul>
+      </div>
+      <div class="vcard">
+        <h3>Target (SaaS)</h3>
+        <ul>
+          <li>API gateway → stateless workers → <b>Postgres</b> + Redis</li>
+          <li>Durable job queue; job state in the database</li>
+          <li><b>Clerk JWT</b> verified server-side on every request</li>
+          <li><b>Org/tenant</b> on every row; scoped queries + RBAC</li>
+          <li>Control plane maps tenants → Wazuh + worker nodes</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><span class="ix">03</span><h2>Pre-production hardening checklist</h2></div>
+    <p class="sub">Because Cloud-X is itself a security product, its own posture is a first-class requirement. These are the items to close before any internet-facing or multi-customer deployment, framed as remediation tasks.</p>
+
+    <div class="hard"><span class="sev s-p0">P0</span><div>
+      <h4>Authentication &amp; authorization</h4>
+      <p>Verify identity (Clerk session JWT) server-side on every API endpoint and attach the token from the client. Today access is enforced only in the frontend.</p>
+      <div class="area">Area: backend API · web API client</div>
+    </div></div>
+    <div class="hard"><span class="sev s-p0">P0</span><div>
+      <h4>Harden the deployment endpoints</h4>
+      <p>Require authentication, restrict to allow-listed hosts, and treat all deployment inputs as data (strict quoting / parameterised execution). Avoid logging credentials; prefer key-based / ephemeral auth.</p>
+      <div class="area">Area: deployer · deploy routes</div>
+    </div></div>
+    <div class="hard"><span class="sev s-p0">P0</span><div>
+      <h4>Input validation for scans</h4>
+      <p>Validate scan targets (IP / CIDR / hostname) and build scanner command-lines as argument arrays rather than strings.</p>
+      <div class="area">Area: scanners</div>
+    </div></div>
+    <div class="hard"><span class="sev s-p0">P0</span><div>
+      <h4>Secrets &amp; artifact hygiene</h4>
+      <p>Remove the database file, committed virtualenv, and certificate from version control; add a <code>.gitignore</code> and an <code>.env.example</code>; move config to environment variables.</p>
+      <div class="area">Area: backend repo hygiene</div>
+    </div></div>
+    <div class="hard"><span class="sev s-p1">P1</span><div>
+      <h4>Production runtime</h4>
+      <p>Serve via a production WSGI server (gunicorn) as a non-root user; isolate raw-socket scanners; restrict CORS to known origins.</p>
+      <div class="area">Area: Dockerfile · app entrypoint</div>
+    </div></div>
+    <div class="hard"><span class="sev s-p1">P1</span><div>
+      <h4>Data layer &amp; async durability</h4>
+      <p>Move to Postgres with Alembic migrations; run scans on a durable job queue with state persisted in the database (survives restarts, scales horizontally).</p>
+      <div class="area">Area: backend</div>
+    </div></div>
+  </section>
+
+  <section>
+    <div class="sec-h"><span class="ix">04</span><h2>The build plan</h2></div>
+    <p class="sub">Phase 1 makes a <b>single-tenant</b> product that is secure, real, and pilot-ready. Phase 2 turns it into a <b>multi-tenant SaaS</b> with billing. Hold Phase 2 features until Phase 1 is solid.</p>
+
+    <div class="phase">
+      <div class="phase-top">
+        <div><div class="tag">Phase 1</div><h3>Harden &amp; complete the core</h3></div>
+        <span class="est">~6–10 weeks · pilot-ready</span>
+      </div>
+      <p class="goal">A secure, deployable single-org product to put in front of 3–5 design-partner SMBs — with the Wazuh single-pane actually working.</p>
+      <div class="ws"><h4><span class="k">A</span> Lock down the backend</h4><ul>
+        <li>Server-side <b>auth on every route</b> + token from the client; standardise on Clerk.</li>
+        <li>Input validation, deployment-endpoint hardening, restricted CORS.</li>
+        <li><b>gunicorn</b>, non-root container; isolate raw-socket scanners.</li>
+        <li>Purge secrets/artifacts from git; add <code>.env.example</code>.</li>
+      </ul></div>
+      <div class="ws"><h4><span class="k">B</span> Make the core value real (Wazuh)</h4><ul>
+        <li>Backend <b>Wazuh connector</b>: agents, alerts, FIM &amp; SCA via the Manager REST API.</li>
+        <li>Build the Wazuh dashboard page against it — a real <b>SIEM single pane</b>.</li>
+        <li>Adopt the standalone <b>Cloud-X-security-agent</b> installer as the canonical enrollment path.</li>
+      </ul></div>
+      <div class="ws"><h4><span class="k">C</span> Productionise (single-tenant)</h4><ul>
+        <li><b>Postgres + Alembic</b>; durable job queue (state in DB).</li>
+        <li>Real system-monitor; structured logging, error tracking, health probes.</li>
+        <li>Finalise nginx + HTTPS; pick an in-region host.</li>
+      </ul></div>
+      <div class="ws"><h4><span class="k">D</span> Pilot deliverable</h4><ul>
+        <li>Monthly <b>security &amp; posture report (PDF)</b> from scan + Wazuh + SCA data.</li>
+      </ul></div>
+      <div class="dod"><div class="lab">Definition of done</div><p>Every API authenticated · runs non-root over HTTPS on a cloud host · Wazuh agents &amp; alerts visible in the dashboard · onboard an endpoint in &lt;15 min · generate a posture PDF for one pilot org.</p></div>
+    </div>
+
+    <div class="phase p2">
+      <div class="phase-top">
+        <div><div class="tag">Phase 2</div><h3>Multi-tenant SaaS &amp; monetisation</h3></div>
+        <span class="est">~8–12 weeks · self-serve</span>
+      </div>
+      <p class="goal">Serve multiple organisations with hard isolation, self-serve onboarding, and billing — including local payment rails.</p>
+      <div class="ws"><h4><span class="k">A</span> Tenancy model</h4><ul>
+        <li><b>Organisation + Membership</b> (map to Clerk Organizations); <code>org_id</code> on every table; scoped queries.</li>
+        <li><b>RBAC</b>: owner / admin / analyst / viewer.</li>
+        <li>Replace the browser-local “servers” idea with a server-side tenant→node map behind one gateway.</li>
+      </ul></div>
+      <div class="ws"><h4><span class="k">B</span> Wazuh isolation strategy</h4><ul>
+        <li><b>Manager-per-tenant</b> (strong isolation) for regulated / BFSI customers.</li>
+        <li><b>Shared manager + Wazuh RBAC &amp; per-tenant agent groups</b> for the SMB tier.</li>
+        <li>Secure node ↔ control-plane comms (mTLS / signed tokens).</li>
+      </ul></div>
+      <div class="ws"><h4><span class="k">C</span> Billing &amp; plans</h4><ul>
+        <li><b>Stripe</b> subscriptions + metered per-agent usage.</li>
+        <li><b>Local rails</b>: M-Pesa (Daraja), Paystack/Flutterwave, priced in KES.</li>
+        <li>Enforce Free / Basic / Pro tiers from real usage.</li>
+      </ul></div>
+      <div class="ws"><h4><span class="k">D</span> Compliance &amp; trust (the GTM wedge)</h4><ul>
+        <li>Kenya <b>DPA-aligned</b> features: in-region residency, audit logs, data export/erasure, retention.</li>
+        <li>“Compliance-by-design” report templates (DPA + CIS from SCA data).</li>
+      </ul></div>
+      <div class="dod"><div class="lab">Definition of done</div><p>Multiple isolated orgs (cross-tenant access provably impossible) · per-org Wazuh data · per-org billing incl. M-Pesa · admins manage org/members/plan · audit log + data export.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><span class="ix">05</span><h2>First two weeks</h2></div>
+    <p class="sub">Small, high-leverage steps that make the system safe to demo and unblock everything after.</p>
+    <div class="sprint">
+      <div class="row"><span class="n">1</span><p><b>Purge secrets from git</b> — remove the DB file, <code>venv/</code> and cert; add <code>.gitignore</code> + <code>.env.example</code>.</p></div>
+      <div class="row"><span class="n">2</span><p><b>Add server-side auth</b> — Clerk JWT verification on the backend + token from the client; restrict CORS. (Closes the open-API gap.)</p></div>
+      <div class="row"><span class="n">3</span><p><b>Validate scan targets</b> &amp; build scanner args as arrays. (Prevents argument injection.)</p></div>
+      <div class="row"><span class="n">4</span><p><b>Contain the deploy path</b> — authenticate the deployment endpoints, fix input quoting, disable the unfinished Windows path.</p></div>
+      <div class="row"><span class="n">5</span><p><b>Production runtime</b> — gunicorn, non-root container.</p></div>
+      <div class="row"><span class="n">6</span><p><b>Postgres + Alembic</b> so the schema can evolve and data survives restarts.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-h"><span class="ix">06</span><h2>Deferred (Phase 3+)</h2></div>
+    <p class="sub">On the roadmap, not on the critical path. Shipping these before tenancy + the Wazuh core is scope-sprawl.</p>
+    <div class="defer">
+      <span>NIDS / IDPS</span><span>DLP</span><span>EUBA</span><span>SOAR auto-response</span><span>VirusTotal / Shodan</span>
+      <span style="border-color:var(--accent);color:var(--accent)">★ AI alert triage + plain-English / Swahili summaries</span>
+    </div>
+    <p style="font-size:13.5px;color:var(--ink2);margin-top:16px">The starred item is the natural differentiator — slot “explain this alert &amp; recommend an action” as the first Phase 3 feature, once real Wazuh data is flowing.</p>
+  </section>
+
+  <p class="note">Prepared as an internal engineering planning audit against the <code>main</code> branch. Detailed remediation notes are tracked in the issue tracker. Effort estimates assume 1–2 focused engineers and exclude SOC staffing.</p>
+  <footer>Cloud-X · Project Status &amp; SaaS-Readiness Roadmap</footer>
+</div>
+
+<script>
+  (function(){
+    var root=document.documentElement, btn=document.getElementById('themeBtn');
+    var saved=null; try{saved=localStorage.getItem('cx-theme');}catch(e){}
+    if(saved==='light'){root.classList.remove('dark');root.classList.add('light');}
+    function sync(){var light=root.classList.contains('light');btn.textContent=light?'◐ Dark':'◐ Light';}
+    sync();
+    btn.addEventListener('click',function(){
+      root.classList.toggle('light');root.classList.toggle('dark');
+      try{localStorage.setItem('cx-theme',root.classList.contains('light')?'light':'dark');}catch(e){}
+      sync();
+    });
+  })();
+</script>
+</body>
+</html>

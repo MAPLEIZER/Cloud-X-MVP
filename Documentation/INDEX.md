@@ -3,12 +3,14 @@
 This document serves as a central index for all documentation within the Cloud-X project.
 
 ## Project Overview
-- [Main README](../README.md): Project overview, features, tech stack, and setup instructions.
+- [Main README](../README.md): Project overview, current status, features, tech stack, and setup instructions.
+- [SaaS-Readiness Audit & Roadmap](SAAS_READINESS.md): Current-state audit, pre-production hardening checklist, and the two-phase plan (single-tenant → multi-tenant SaaS).
+- [SaaS-Readiness Report (HTML)](SAAS_READINESS_AUDIT.html): Visual version of the status & roadmap report.
 - [Setup Guide](README_SETUP.md): Detailed setup and configuration guide.
 - [Project Description](project-description.md): Vision, roadmap, and detailed project description.
 - [Implementation Plan](IMPLEMENTATION_PLAN.md): Detailed execution plan with timeline (MVP to AI-powered SOC).
 - [Wireframes](prohect-wireframe.md): UI wireframes and design concepts.
-- [Roadmap](ROADMAP.md): High-level project roadmap.
+- [Roadmap](ROADMAP.md): High-level feature roadmap.
 - [Restructuring Plan](RESTRUCTURING_PLAN.md): Migration and restructuring documentation.
 
 ## Frontend

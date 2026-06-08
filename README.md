@@ -7,6 +7,24 @@
 
 **Cloud-X Security** is a unified security dashboard designed to bring enterprise-level monitoring, detection, and response capabilities to Small and Medium Businesses (SMBs) at an affordable scale. It combines powerful open-source tools with custom modules into a single pane of glass.
 
+## 📊 Project Status (June 2026)
+
+Cloud-X is currently a **working single-tenant prototype**. The frontend shell and the network-scanning engine are real and functional; the work that turns it into a multi-tenant SaaS — server-side authentication, tenant isolation, the Wazuh SIEM core, durable async, and billing — is in active planning/build.
+
+> **SaaS-readiness: ~18%.** The app runs as a functional prototype on a trusted network. Server-side authentication, tenant isolation, and production hardening are in progress **before any public or multi-tenant deployment.**
+
+| Area | Status |
+|---|---|
+| Frontend shell · routing · theming · Clerk sign-in | ✅ Built |
+| Network scanning (Nmap / ZMap / Masscan) | ✅ Built |
+| System monitor | 🟡 Partial |
+| Agent deployment (Linux/macOS SSH) | 🟡 Partial |
+| Agent deployment (Windows WinRM) | ⚪ Scaffold |
+| Wazuh "single pane" (SIEM core) | ⚪ Not built — top priority |
+| Advanced tools / Billing / Multi-node | ⚪ Not built |
+
+📄 **Full audit & two-phase roadmap:** [`Documentation/SAAS_READINESS.md`](Documentation/SAAS_READINESS.md) · visual report: [`Documentation/SAAS_READINESS_AUDIT.html`](Documentation/SAAS_READINESS_AUDIT.html)
+
 ## 🚀 Key Features
 
 - **Unified Dashboard**: Real-time overview of your security posture, network health, and active threats.
@@ -20,8 +38,9 @@
 - **Frontend**: [Vite](https://vitejs.dev/) + [React](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/)
 - **UI Framework**: [ShadcnUI](https://ui.shadcn.com/) (TailwindCSS + RadixUI)
 - **Routing**: [TanStack Router](https://tanstack.com/router/latest)
-- **Backend**: Flask (Python) with Celery & Redis for async tasks
-- **Core Engine**: Wazuh SIEM (Integration in progress)
+- **Auth**: [Clerk](https://clerk.com/) (frontend; server-side verification planned — see roadmap)
+- **Backend**: Flask (Python). Background scans currently run on worker threads; migrating to a Redis-backed task queue (Celery/RQ).
+- **Core Engine**: Wazuh SIEM (connector planned — see roadmap)
 
 ## 📂 Project Structure
 
@@ -52,6 +71,9 @@ Cloud-X-MVP/
 │   └── wazuh-configs/          # Wazuh agent configurations
 └── Documentation/              # Project Documentation
     ├── INDEX.md                # Central documentation index
+    ├── SAAS_READINESS.md       # SaaS-readiness audit & two-phase roadmap
+    ├── ROADMAP.md              # High-level feature roadmap
+    ├── IMPLEMENTATION_PLAN.md  # Detailed execution plan
     ├── FRONTEND.md             # Frontend architecture guide
     ├── BACKEND_AGENTS.md       # Backend & Agent technical docs
     ├── BACKEND_CONFIG.md       # Backend setup and configuration
@@ -94,15 +116,14 @@ Cloud-X-MVP/
     npm run dev:all
     ```
 
-## 🔮 Future Roadmap
+## 🔮 Roadmap
 
-We are actively building the next generation of Cloud-X with focus on:
+Near-term work is organised into two phases (full detail in [`Documentation/SAAS_READINESS.md`](Documentation/SAAS_READINESS.md)):
 
-- **NIDS/IDPS**: Network Intrusion Detection
-- **DLP**: Data Loss Prevention
-- **AI Analytics**: Automated Threat Hunting
+- **Phase 1 — Harden & complete the core** (single-tenant, pilot-ready): server-side auth, security hardening, the Wazuh connector + dashboard, Postgres + a durable job queue, and a monthly posture-report PDF.
+- **Phase 2 — Multi-tenant SaaS**: org/tenant model + RBAC, the Wazuh isolation strategy, billing (Stripe + M-Pesa/Paystack), and a DPA-aligned compliance layer.
 
-See [ROADMAP.md](./ROADMAP.md) for the detailed development plan.
+Longer-term modules (NIDS/IDPS, DLP, EUBA, AI/SOAR) are tracked in [`Documentation/ROADMAP.md`](Documentation/ROADMAP.md).
 
 ## 📄 License
 
