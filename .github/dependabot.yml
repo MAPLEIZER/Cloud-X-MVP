@@ -4,7 +4,11 @@
 version: 2
 updates:
 
-  # Enable security updates for all ecosystems
+  # GitHub Actions (weekly). This is the single github-actions entry for "/".
+  # The previous config had a duplicate (package-ecosystem: "github-actions",
+  # directory: "/") entry scheduled monthly, which GitHub's validator rejects
+  # as a duplicate updater definition. That duplicate has been removed; its
+  # grouping rule is preserved below.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -18,6 +22,14 @@ updates:
       - "dependencies"
       - "github-actions"
       - "security"
+      - "ci"
+    groups:
+      github-actions:
+        dependency-type: "all"
+        update-types:
+          - "minor"
+          - "patch"
+        apply-groups: "any"
 
   # Frontend (npm) dependencies
   - package-ecosystem: "npm"
@@ -88,32 +100,9 @@ updates:
           - "major"
         apply-groups: "any"
 
-  # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-      day: "first"
-      time: "09:00"
-    open-pull-requests-limit: 3
-    reviewers:
-      - "MAPLEIZER"  # Replace with your actual GitHub username
-    assignees:
-      - "MAPLEIZER"  # Replace with your actual GitHub username
-    commit-message:
-      prefix: "ci"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "github-actions"
-      - "ci"
-    groups:
-      github-actions:
-        dependency-type: "all"
-        update-types:
-          - "minor"
-          - "patch"
-        apply-groups: "any"
+  # (The previous monthly github-actions block at directory "/" was removed
+  #  because it duplicated the weekly entry above. GitHub's Dependabot
+  #  validator rejects duplicate (package-ecosystem, directory) pairs.)
 
   # Docker dependencies (if you have Dockerfile)
   - package-ecosystem: "docker"
