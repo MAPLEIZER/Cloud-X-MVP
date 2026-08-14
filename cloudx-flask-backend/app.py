@@ -10,8 +10,6 @@ from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 import psutil
 from ping3 import ping as ping_host
-import paramiko
-
 from auth import clerk_authorized
 from deployer import AgentDeployer
 from scanners import network_scanners as scanners
@@ -545,122 +543,23 @@ def deploy_agent():
 @app.route("/api/deploy/node", methods=["POST"])
 @clerk_authorized
 def deploy_node():
-    data = _json_body()
-    if data is None:
-        return jsonify({"error": "A JSON object is required"}), 400
-
-    target = data.get("target")
-    username = data.get("username")
-    password = data.get("password")
-    host_key_line = data.get("host_key")
-
-    if not all(
-        isinstance(value, str) and value for value in (target, username, password)
-    ):
-        return jsonify({"error": "Missing credentials"}), 400
-    if not is_valid_host(target):
-        return jsonify({"error": "Invalid target host"}), 400
-    if not is_valid_known_hosts_line(host_key_line):
-        return jsonify({"error": "Invalid host_key format"}), 400
-    if len(username) > 128 or "\x00" in username or len(password) > 4096:
-        return jsonify({"error": "Invalid credentials format"}), 400
-
-    deploy_script = """
-    set -eu
-    if ! command -v docker >/dev/null 2>&1; then
-        echo "Docker is required on the target host." >&2
-        exit 127
-    fi
-    mkdir -p ~/cloudx-backend
-    cd ~/cloudx-backend
-    if docker ps -a --format '{{.Names}}' | grep -Fxq cloudx-backend; then
-        docker rm -f cloudx-backend
-    fi
-    docker run -d -p 5001:5001 --name cloudx-backend python:3.11-slim \
-        python -c "import http.server; http.server.test(HandlerClass=http.server.SimpleHTTPRequestHandler, port=5001)"
-    """
-
-    ssh = None
-    try:
-        ssh = paramiko.SSHClient()
-        ssh.load_system_host_keys()
-        host_keys = ssh.get_host_keys()
-
-        if host_key_line:
-            try:
-                host_key_entry = paramiko.HostKeyEntry.from_line(host_key_line)
-                if host_key_entry and host_key_entry.hostname_matches(target):
-                    host_keys.add(
-                        target,
-                        host_key_entry.key.get_name(),
-                        host_key_entry.key,
-                    )
-                else:
-                    return (
-                        jsonify(
-                            {"error": "Provided host key does not match target host."}
-                        ),
-                        400,
-                    )
-            except Exception:
-                return (
-                    jsonify(
-                        {
-                            "error": "Invalid host_key format. Provide one trusted known_hosts line."
-                        }
-                    ),
-                    400,
-                )
-
-        ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
-        ssh.connect(
-            target,
-            username=username,
-            password=password,
-            timeout=10,
-            banner_timeout=10,
-            auth_timeout=10,
-            look_for_keys=False,
-            allow_agent=False,
-        )
-
-        _, stdout, stderr = ssh.exec_command(deploy_script, timeout=60)
-        exit_status = stdout.channel.recv_exit_status()
-        out = stdout.read().decode(errors="replace")
-        err = stderr.read().decode(errors="replace")
-
-        if exit_status == 0:
-            logger.info("User %s deployed backend node to %s", g.user_id, target)
-            return jsonify(
-                {"message": "Node deployed", "node_url": f"http://{target}:5001"}
-            )
-
-        logger.warning(
-            "Node deployment failed for %s with status %s: stdout=%r stderr=%r",
-            target,
-            exit_status,
-            out[-1000:],
-            err[-1000:],
-        )
-        return jsonify({"error": "Node deployment failed"}), 500
-
-    except paramiko.SSHException:
-        logger.warning("SSH authentication or host-key verification failed for %s", target)
-        return (
-            jsonify(
-                {
-                    "error": "SSH connection failed.",
-                    "details": "Verify credentials and provide a trusted host_key for unknown hosts.",
-                }
-            ),
-            400,
-        )
-    except Exception:
-        logger.exception("Exception during node deployment")
-        return jsonify({"error": "An internal error occurred while deploying the node."}), 500
-    finally:
-        if ssh is not None:
-            ssh.close()
+    logger.warning(
+        "User %s attempted disabled remote node deployment",
+        g.user_id,
+    )
+    return (
+        jsonify(
+            {
+                "error": "Remote node deployment is disabled.",
+                "reason": (
+                    "The previous implementation launched an unauthenticated "
+                    "placeholder HTTP server. Deploy backend nodes with the "
+                    "hardened install_backend.sh workflow instead."
+                ),
+            }
+        ),
+        501,
+    )
 
 
 def cleanup_stale_scans():
