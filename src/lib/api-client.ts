@@ -31,9 +31,12 @@ export interface SyncStatus {
   reason?: string
 }
 
+type TokenProvider = () => Promise<string | null>
+
 class CloudXApiClient {
   private baseURL: string
   private timeout: number
+  private tokenProvider: TokenProvider | null = null
 
   constructor(
     baseURL: string = import.meta.env.VITE_API_BASE_URL ||
@@ -44,6 +47,10 @@ class CloudXApiClient {
     this.timeout = timeout
   }
 
+  setTokenProvider(provider: TokenProvider | null): void {
+    this.tokenProvider = provider
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -52,12 +59,22 @@ class CloudXApiClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout)
 
     try {
+      const headers = new Headers(options.headers)
+
+      if (options.body && !headers.has('Content-Type')) {
+        headers.set('Content-Type', 'application/json')
+      }
+
+      if (this.tokenProvider) {
+        const token = await this.tokenProvider()
+        if (token) {
+          headers.set('Authorization', `Bearer ${token}`)
+        }
+      }
+
       const response = await fetch(`${this.baseURL}${endpoint}`, {
         ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
+        headers,
         signal: controller.signal,
       })
 
@@ -83,7 +100,6 @@ class CloudXApiClient {
     }
   }
 
-  // Health and Status
   async checkHealth(): Promise<HealthStatus> {
     return this.request<HealthStatus>('/api/health')
   }
@@ -96,7 +112,6 @@ class CloudXApiClient {
     return this.request<SyncStatus>('/api/sync-status')
   }
 
-  // Scan Management
   async startScan(params: ScanParams): Promise<ScanResponse> {
     return this.request<ScanResponse>('/api/scans', {
       method: 'POST',
@@ -124,7 +139,6 @@ class CloudXApiClient {
     return this.request<ScanStatus[]>('/api/scans')
   }
 
-  // Configuration
   setBaseURL(url: string): void {
     this.baseURL = url
   }
@@ -134,6 +148,5 @@ class CloudXApiClient {
   }
 }
 
-// Export singleton instance
 export const apiClient = new CloudXApiClient()
 export default CloudXApiClient
