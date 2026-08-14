@@ -27,8 +27,15 @@ if dscl . -read /Groups/wazuh >/dev/null 2>&1; then
     OWNER_GROUP="wazuh"
 fi
 
+# The shared hardened response script uses the Linux Wazuh prefix by default.
+# Render a macOS-local copy so logs and quarantine remain inside /Library/Ossec.
+TEMP_RESPONSE="$(mktemp /tmp/cloudx-remove-threat.XXXXXX)"
+trap 'rm -f -- "$TEMP_RESPONSE"' EXIT INT TERM
+sed 's#/var/ossec#/Library/Ossec#g' "$THREAT_SCRIPT" > "$TEMP_RESPONSE"
 install -o root -g "$OWNER_GROUP" -m 0750 \
-    "$THREAT_SCRIPT" "$ACTIVE_RESPONSE_BIN/remove-threat.py"
+    "$TEMP_RESPONSE" "$ACTIVE_RESPONSE_BIN/remove-threat.py"
+rm -f -- "$TEMP_RESPONSE"
+trap - EXIT INT TERM
 
 CONF_FILE="$ETC_DIR/cloudx_active_response.conf"
 cat > "$CONF_FILE" <<'EOF'
