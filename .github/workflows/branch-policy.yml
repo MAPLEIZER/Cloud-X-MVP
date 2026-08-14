@@ -34,7 +34,7 @@ jobs:
       - name: Validate machine policy
         run: python3 scripts/ci/branch_policy.py validate
       - name: Run governance tests
-        run: python3 -m unittest discover -s tests -p 'test_branch_policy.py'
+        run: python3 -m unittest discover -s tests -p 'test_branch*.py'
       - name: Classify current ref (report only)
         env:
           BRANCH_NAME: ${{ github.head_ref || github.ref_name }}

@@ -1,0 +1,26 @@
+name: Archive and Purge Non-Permanent Branches
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  archive-and-purge:
+    name: Archive and purge legacy branches
+    if: contains(github.event.head_commit.message, '[branch-purge]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full repository history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Archive branch tips and delete non-permanent refs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/ci/archive_non_permanent_branches.sh
