@@ -24,7 +24,6 @@ ENV FLASK_APP=app.py \
     FLASK_ENV=production \
     PYTHONUNBUFFERED=1 \
     PORT=5001 \
-    DATABASE_PATH=/data/scans.db \
     IDENTITY_FILE=/data/server_identity.json
 
 USER 10001:10001

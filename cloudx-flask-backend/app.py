@@ -60,10 +60,13 @@ SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts"
 deployer = AgentDeployer(SCRIPTS_DIR)
 
 app = Flask(__name__)
-DATABASE_PATH = os.path.abspath(
-    os.getenv("DATABASE_PATH", os.path.join(os.path.dirname(__file__), "scans.db"))
-)
-app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DATABASE_PATH}"
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL must be configured with a PostgreSQL connection URL."
+    )
+app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URL
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"pool_pre_ping": True}
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 app.config["CLERK_SECRET_KEY"] = CLERK_SECRET_KEY
@@ -576,7 +579,6 @@ def cleanup_stale_scans():
 
 if __name__ == "__main__":
     with app.app_context():
-        db.create_all()
         cleanup_stale_scans()
 
     app.run(host="0.0.0.0", debug=False, port=5001)
