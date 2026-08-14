@@ -35,7 +35,6 @@ class AgentDeployer:
             (os.path.join(self.scripts_dir, "linux", "cloudx-agent-install.sh"), "cloudx-agent-install.sh"),
             (os.path.join(self.scripts_dir, "linux", "cloudx-agent-setup.sh"), "cloudx-agent-setup.sh"),
             (os.path.join(self.scripts_dir, "linux", "remove-threat.py"), "remove-threat.py"),
-            (os.path.join(self.scripts_dir, "linux", "requirements.txt"), "requirements.txt"),
         ]
         return self._execute_ssh_bundle(
             target,
@@ -54,39 +53,48 @@ class AgentDeployer:
         if not self._valid_parameters(target, manager_ip, agent_name, group):
             return {"status": "error", "error": "Invalid deployment parameters."}
 
-        script_path = os.path.join(self.scripts_dir, "windows", "cloudx-agent-installer.psm1")
-        cert_path = os.path.join(self.scripts_dir, "windows", "cloudx-code-signing.cer")
+        windows_dir = os.path.join(self.scripts_dir, "windows")
+        bundle_paths = {
+            "module": os.path.join(windows_dir, "cloudx-agent-installer.psm1"),
+            "setup": os.path.join(windows_dir, "cloudx-agent-setup.ps1"),
+            "threat": os.path.join(windows_dir, "remove-threat.py"),
+        }
 
         try:
-            with open(script_path, "r", encoding="utf-8") as script_file:
-                script_content = script_file.read()
-            with open(cert_path, "rb") as cert_file:
-                cert_content_b64 = base64.b64encode(cert_file.read()).decode("ascii")
+            bundle = {}
+            for name, path in bundle_paths.items():
+                with open(path, "rb") as source_file:
+                    bundle[name] = base64.b64encode(source_file.read()).decode("ascii")
         except OSError:
             logger.exception("Required Windows deployment file is missing")
             return {
                 "status": "error",
-                "message": "Required deployment file is missing on the server.",
+                "error": "Required deployment file is missing on the server.",
             }
 
         ps_script = f"""
         $ErrorActionPreference = "Stop"
+        Set-StrictMode -Version Latest
 
-        $certB64 = "{cert_content_b64}"
-        $certBytes = [System.Convert]::FromBase64String($certB64)
-        $certPath = "$env:TEMP\\cloudx-code-signing.cer"
-        [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+        $deployDir = Join-Path $env:TEMP ("cloudx-deploy-" + [Guid]::NewGuid().ToString("N"))
+        New-Item -ItemType Directory -Path $deployDir -Force | Out-Null
 
-        Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\\LocalMachine\\Root | Out-Null
+        try {{
+            $modulePath = Join-Path $deployDir "cloudx-agent-installer.psm1"
+            $setupPath = Join-Path $deployDir "cloudx-agent-setup.ps1"
+            $threatPath = Join-Path $deployDir "remove-threat.py"
 
-        $moduleContent = @'
-{script_content}
-'@
-        $modulePath = "$env:TEMP\\cloudx-agent-installer.psm1"
-        $moduleContent | Out-File -FilePath $modulePath -Encoding UTF8
+            [IO.File]::WriteAllBytes($modulePath, [Convert]::FromBase64String("{bundle['module']}"))
+            [IO.File]::WriteAllBytes($setupPath, [Convert]::FromBase64String("{bundle['setup']}"))
+            [IO.File]::WriteAllBytes($threatPath, [Convert]::FromBase64String("{bundle['threat']}"))
 
-        Import-Module $modulePath -Force
-        Install-CloudXAgent -ManagerIP "{manager_ip}" -AgentName "{agent_name}" -AgentGroup "{group}"
+            Import-Module $modulePath -Force
+            Install-CloudXAgent -ManagerIP "{manager_ip}" -AgentName "{agent_name}" -AgentGroup "{group}" | Out-Null
+            & $setupPath -WazuhManager "{manager_ip}" -AgentName "{agent_name}"
+        }}
+        finally {{
+            Remove-Item -LiteralPath $deployDir -Recurse -Force -ErrorAction SilentlyContinue
+        }}
         """
 
         return self._execute_winrm(target, username, password, ps_script)
@@ -238,6 +246,9 @@ class AgentDeployer:
                 host,
                 auth=(username, password),
                 transport="ntlm",
+                message_encryption="always",
+                operation_timeout_sec=300,
+                read_timeout_sec=330,
             )
             result = session.run_ps(ps_script)
 
