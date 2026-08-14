@@ -11,6 +11,6 @@ xmltodict>=1.0.4,<2
 paramiko>=3.5.1,<4
 pywinrm>=0.5.0,<1
 psutil>=6.0.0,<8
-ping3>=4.0.4,<5
+ping3>=5.1.5,<6
 clerk-backend-api>=6.0.1,<7
 gunicorn>=26.0.0,<27
