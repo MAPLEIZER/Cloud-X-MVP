@@ -232,6 +232,10 @@ export function WazuhDashboard() {
     )
   }
 
+  if (!statusQuery.data) {
+    return null
+  }
+
   const status = statusQuery.data
   const overview = overviewQuery.data
 
