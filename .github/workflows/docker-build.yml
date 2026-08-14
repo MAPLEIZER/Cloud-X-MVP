@@ -71,5 +71,17 @@ jobs:
           file: ./cloudx-flask-backend/Dockerfile
           tags: backend:latest
           load: true
+      - name: Verify backend runtime is unprivileged
+        run: |
+          docker run --rm --entrypoint sh backend:latest -c '
+            test "$(id -u)" = "10001"
+            test "$(id -g)" = "10001"
+            test -w /data
+            test ! -w /app/app.py
+          '
+      - name: Smoke-test Nmap as the runtime user
+        run: |
+          docker run --rm --entrypoint nmap backend:latest \
+            -T4 -F -v -oX - 127.0.0.1 >/dev/null
       - name: Run backend security regression tests
         run: docker run --rm --entrypoint python backend:latest -m unittest discover -s /app/tests
