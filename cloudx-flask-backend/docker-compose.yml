@@ -19,6 +19,19 @@ services:
       timeout: 5s
       retries: 12
 
+  redis:
+    image: redis:8-alpine
+    container_name: cloudx-redis
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - cloudx_redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   backend:
     build: .
     image: cloudx-backend:latest
@@ -29,6 +42,7 @@ services:
       - .env
     environment:
       IDENTITY_FILE: /data/server_identity.json
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
     volumes:
       - cloudx_data:/data
     cap_drop:
@@ -41,6 +55,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/health"]
       interval: 30s
@@ -48,6 +64,40 @@ services:
       retries: 3
       start_period: 20s
 
+  scan-worker:
+    image: cloudx-backend:latest
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    entrypoint: ["rq"]
+    command:
+      [
+        "worker-pool",
+        "scans",
+        "--num-workers",
+        "${SCAN_WORKERS:-2}",
+        "--url",
+        "${REDIS_URL:-redis://redis:6379/0}",
+        "--serializer",
+        "json",
+        "--worker-class",
+        "scan_jobs.CloudXWorker",
+      ]
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   cloudx_data:
   cloudx_postgres_data:
+  cloudx_redis_data:
