@@ -32,7 +32,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required for identity generation." >&2
+  echo "python3 is required." >&2
   exit 1
 fi
 
@@ -65,6 +65,32 @@ if [[ "$NODE_ROLE" != "primary" && "$NODE_ROLE" != "worker" ]]; then
   exit 1
 fi
 
+POSTGRES_DB="${POSTGRES_DB:-cloudx}"
+POSTGRES_USER="${POSTGRES_USER:-cloudx}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')}"
+
+if ! [[ "$POSTGRES_DB" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "POSTGRES_DB may contain only letters, digits, and underscores." >&2
+  exit 1
+fi
+if ! [[ "$POSTGRES_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "POSTGRES_USER may contain only letters, digits, and underscores." >&2
+  exit 1
+fi
+
+DATABASE_URL="$(python3 - "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB" <<'PY'
+import sys
+from urllib.parse import quote
+
+user, password, database = sys.argv[1:4]
+print(
+    "postgresql+psycopg://"
+    f"{quote(user, safe='')}:{quote(password, safe='')}@postgres:5432/"
+    f"{quote(database, safe='')}"
+)
+PY
+)"
+
 HOSTNAME_RESOLVED="$(hostname -f 2>/dev/null || hostname -s 2>/dev/null || echo "127.0.0.1")"
 PRIMARY_DEFAULT="http://${HOSTNAME_RESOLVED:-127.0.0.1}:5001"
 if [[ "$NODE_ROLE" == "worker" ]]; then
@@ -87,46 +113,19 @@ else
   docker pull "$IMAGE"
 fi
 
-touch scans.db
-chmod 0600 scans.db
-
-python3 - <<'PY'
-import datetime
-import json
-import os
-import uuid
-from datetime import timezone
-
-path = "server_identity.json"
-data = None
-if os.path.exists(path):
-    try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        data = None
-
-if not data or "server_id" not in data:
-    data = {
-        "server_id": str(uuid.uuid4()),
-        "created_at": datetime.datetime.now(timezone.utc).isoformat(),
-    }
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle)
-
-os.chmod(path, 0o600)
-PY
-
 cat > .env <<EOF
 FLASK_ENV=production
 PORT=5001
-DATABASE_PATH=/app/scans.db
 PRIMARY_NODE_URL=$PRIMARY_NODE_URL
 NODE_ROLE=$NODE_ROLE
 NODE_ID=$NODE_ID
 CLERK_SECRET_KEY=$CLERK_SECRET_KEY
 CLERK_AUTHORIZED_PARTIES=$CLERK_AUTHORIZED_PARTIES
 CLERK_ALLOWED_USER_IDS=$CLERK_ALLOWED_USER_IDS
+POSTGRES_DB=$POSTGRES_DB
+POSTGRES_USER=$POSTGRES_USER
+POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+DATABASE_URL=$DATABASE_URL
 MAX_CONCURRENT_SCANS=${MAX_CONCURRENT_SCANS:-4}
 GUNICORN_THREADS=${GUNICORN_THREADS:-8}
 GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
@@ -140,6 +139,22 @@ fi
 
 cat > docker-compose.yml <<EOF
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cloudx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: \${POSTGRES_DB}
+      POSTGRES_USER: \${POSTGRES_USER}
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+    volumes:
+      - cloudx_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \$\${POSTGRES_USER} -d \$\${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   backend:
     image: $IMAGE
     container_name: cloudx-backend
@@ -148,16 +163,31 @@ services:
       - "$HOST_PORT:5001"
     env_file:
       - .env
+    environment:
+      IDENTITY_FILE: /data/server_identity.json
     volumes:
-      - "${DATA_DIR}/scans.db:/app/scans.db"
-      - "${DATA_DIR}/server_identity.json:/app/server_identity.json"
+      - cloudx_data:/data
     cap_drop:
       - ALL
 $CAP_RAW_BLOCK
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  cloudx_data:
+  cloudx_postgres_data:
 EOF
 chmod 0600 docker-compose.yml
 
 $COMPOSE_BIN up -d
-echo "Deployment finished. Check health: curl -fsSL http://localhost:$HOST_PORT/api/health"
+echo "Deployment finished. PostgreSQL credentials are stored in $DATA_DIR/.env (mode 0600)."
+echo "Check health: curl -fsSL http://localhost:$HOST_PORT/api/health"
