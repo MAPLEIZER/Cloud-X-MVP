@@ -6,6 +6,15 @@ not execute it without the required Redis and PostgreSQL services.
 
 import json
 import sys
+from pathlib import Path
+
+# CI executes this file directly from /app/tests. Python therefore puts the
+# tests directory, rather than the application root, at sys.path[0]. Add /app
+# explicitly so the probe exercises the same application modules as Gunicorn
+# and the RQ worker instead of depending on the caller's working directory.
+APP_ROOT = Path(__file__).resolve().parents[1]
+if str(APP_ROOT) not in sys.path:
+    sys.path.insert(0, str(APP_ROOT))
 
 from app import Scan, app, db
 from scan_queue import enqueue_scan, get_queue_job_status, request_scan_stop
