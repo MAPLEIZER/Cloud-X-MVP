@@ -6,6 +6,7 @@ metrics come from psutil, a configured provider can return agent snapshots, and
 unmanaged remote hosts fall back to clearly-labelled ping latency only.
 """
 
+import logging
 import time
 from datetime import datetime, timezone
 
@@ -15,6 +16,8 @@ from ping3 import ping as ping_host
 
 from auth import clerk_authorized
 from security_utils import is_valid_host
+
+logger = logging.getLogger(__name__)
 
 
 def _timestamp_ms():
@@ -133,9 +136,17 @@ def create_system_monitor_view(metrics_provider=None):
             try:
                 snapshot = metrics_provider.metrics_for_target(target)
             except Exception:
-                # Provider failures must not turn into fabricated values. Fall
-                # back to the explicitly agentless contract instead.
-                snapshot = None
+                logger.exception("Managed endpoint metrics provider failed for %s", target)
+                return (
+                    jsonify(
+                        {
+                            "error": "Managed endpoint metrics are temporarily unavailable",
+                            "source": "managed_provider_error",
+                            "mode": "agent",
+                        }
+                    ),
+                    502,
+                )
             if snapshot is not None:
                 return jsonify(snapshot)
 
