@@ -1,135 +1,144 @@
-# Cloud-X Security Scanner: Backend Configuration
+# Cloud-X Backend Configuration
 
-This document outlines the setup and configuration required for the Flask-based backend application that powers the Cloud-X Security Dashboard.
+This document describes the current Flask backend configuration for the Cloud-X Security Dashboard.
 
-## Core Technologies
+## Core technologies
 
 | Technology | Purpose |
-|------------|---------|
-| **Flask** | Web framework for REST API |
-| **Flask-SQLAlchemy** | Database ORM |
-| **Flask-CORS** | Cross-origin request handling |
-| **SQLite** | Database (file: `scans.db`) |
-| **Threading** | Background task processing for scans |
-| **Paramiko** | SSH connections for Linux/Mac agent deployment |
-| **pywinrm** | WinRM connections for Windows agent deployment |
-| **psutil** | Local system monitoring |
-| **ping3** | Network latency checking |
+|---|---|
+| **Flask** | REST API |
+| **Flask-SQLAlchemy / SQLAlchemy** | ORM and database access |
+| **PostgreSQL** | Durable backend datastore |
+| **Alembic** | Versioned database schema migrations |
+| **Gunicorn** | Production WSGI server |
+| **Paramiko** | SSH deployment for Linux/macOS agents |
+| **pywinrm** | Optional WinRM deployment for Windows agents |
+| **psutil** | Local system metrics |
+| **Nmap / ZMap / Masscan** | Network scanning engines |
 
-> **Note**: The current implementation uses Python threading for background tasks instead of Celery. This simplifies deployment but limits scalability. For high-volume deployments, consider migrating to Celery with Redis.
+The container runs as an unprivileged user. Writable runtime state is kept under `/data`; application source under `/app` is not writable by the runtime user.
 
----
+## Required environment variables
 
-## Environment Variables
-
-The backend uses minimal environment configuration. For production, create a `.env` file:
+Copy `cloudx-flask-backend/.env.example` to `.env` and replace every placeholder before starting the stack.
 
 ```env
-# Optional: Override database location
-DATABASE_URL=sqlite:///scans.db
+CLERK_SECRET_KEY=sk_test_replace_me
+CLERK_AUTHORIZED_PARTIES=http://localhost:5173
+CLERK_ALLOWED_USER_IDS=user_replace_me
 
-# Optional: Flask debug mode (default: True in development)
-FLASK_DEBUG=1
+DEPLOYMENT_TARGET_ALLOWLIST_JSON={"user:user_replace_me":["192.168.1.0/24","server.example.com"]}
+ENABLE_WINDOWS_AGENT_DEPLOYMENT=false
+
+POSTGRES_DB=cloudx
+POSTGRES_USER=cloudx
+POSTGRES_PASSWORD=replace_with_a_long_random_password
+DATABASE_URL=postgresql+psycopg://cloudx:replace_with_a_long_random_password@postgres:5432/cloudx
+
+MAX_CONCURRENT_SCANS=4
+GUNICORN_THREADS=8
+GUNICORN_TIMEOUT=300
 ```
 
----
+`DATABASE_URL` is mandatory. The backend deliberately fails closed when no PostgreSQL connection URL is configured. If the username, password, or database contains reserved URL characters, URL-encode those values before constructing `DATABASE_URL`.
 
-## Setup and Running
+## Remote deployment authorization
 
-### Prerequisites
+Remote agent deployment is additionally restricted by `DEPLOYMENT_TARGET_ALLOWLIST_JSON`. An empty or missing allow-list authorizes **no** remote deployment targets.
 
-- Python 3.8+
-- Network scanning tools: `nmap`, `zmap`, `masscan` (for scan functionality)
-- Virtual environment (recommended)
+The JSON object is keyed by Clerk principals:
 
-### Installation
+```json
+{
+  "user:user_123": ["10.20.30.0/24", "server.example.com"],
+  "org:org_456": ["192.0.2.50", "2001:db8::/64"]
+}
+```
 
-1. **Create and activate virtual environment:**
-   ```bash
-   # Linux/macOS
-   python3 -m venv venv
-   source venv/bin/activate
+Rules:
 
-   # Windows (PowerShell)
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
-   ```
+- a `user:<Clerk user id>` entry authorizes targets for that user;
+- an `org:<Clerk organization id>` entry authorizes targets when that organization is active in the authenticated session;
+- IP/CIDR entries match literal IP targets;
+- hostnames are exact, case-insensitive entries and are not resolved into CIDRs for authorization;
+- there is no wildcard principal or wildcard host rule;
+- invalid JSON, principals, hosts, or networks fail application startup rather than widening access.
 
-2. **Install Python dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+Linux/macOS deployment arguments are shell-quoted before remote execution. The Windows path decodes validated values into PowerShell variables and passes those variables through PowerShell parameter binding; user values are not inserted directly into the PowerShell program.
 
-3. **Install scanning tools (Linux/macOS):**
-   ```bash
-   sudo apt update
-   sudo apt install nmap zmap masscan
-   ```
+Windows agent deployment is disabled by default. Set `ENABLE_WINDOWS_AGENT_DEPLOYMENT=true` only after WinRM connectivity, encryption and installer behavior have been validated in the target environment. The endpoint returns `503` for Windows requests while the flag is disabled.
 
-### Running the Backend
+The backend never logs submitted deployment passwords. Prefer scoped/ephemeral credentials or key-based SSH authentication when the deployment architecture is expanded beyond the current prototype.
+
+## Database and migrations
+
+Cloud-X no longer creates its production schema with `db.create_all()` and no longer uses `scans.db` as the application datastore. Database changes are versioned in `cloudx-flask-backend/migrations/` and applied with Alembic.
+
+The initial migration creates the `scan` table used for scan status and results.
+
+Apply migrations manually when needed:
 
 ```bash
-# Linux/macOS (requires sudo for raw socket access)
-sudo $(which python3) app.py
-
-# Windows (run PowerShell as Administrator)
-python app.py
+cd cloudx-flask-backend
+alembic upgrade head
 ```
 
-The backend API will be available at `http://0.0.0.0:5001`.
+Container startup also runs `alembic upgrade head` before Gunicorn starts. If PostgreSQL is unavailable or a migration fails, startup fails rather than serving against an unknown schema.
 
----
+Useful migration commands:
 
-## Database
-
-The application uses SQLite with automatic table creation on startup.
-
-- **Database file**: `scans.db` (created automatically)
-- **Main table**: `Scan` - stores scan jobs, status, and results
-
-### Schema
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `id` | Integer | Primary key |
-| `job_id` | String(36) | UUID for the scan |
-| `tool` | String(50) | Scanner tool (nmap, zmap, masscan) |
-| `target` | String(128) | Scan target IP/network |
-| `scan_type` | String(50) | Scan type configuration |
-| `status` | String(20) | Current status |
-| `progress` | Integer | Progress percentage (0-100) |
-| `results` | Text | JSON-encoded scan results |
-| `created_at` | DateTime | Creation timestamp |
-
----
-
-## API Endpoints
-
-See [cloudx-flask-backend/README.md](../cloudx-flask-backend/README.md) for complete API documentation.
-
----
-
-## Deployment Notes
-
-### Agent Scripts Location
-
-The backend serves agent installation scripts from:
+```bash
+alembic current
+alembic history
+alembic upgrade head
 ```
+
+New schema changes should be represented by a reviewed migration file rather than runtime `create_all()` calls.
+
+## Docker setup
+
+From the repository root:
+
+```bash
+cd cloudx-flask-backend
+cp .env.example .env
+# Edit .env and replace all placeholder credentials and deployment principals.
+docker compose build
+docker compose up -d
+docker compose ps
+curl -fsS http://127.0.0.1:5001/api/health
+```
+
+The backend Compose stack includes PostgreSQL 17 with a persistent named volume. The API waits for PostgreSQL health before starting. The backend drops all Linux capabilities and adds back only `NET_RAW` for scanner functionality, with `no-new-privileges` enabled.
+
+## Standalone installer
+
+`install_backend.sh` is an experimental bootstrap utility. It deploys the same PostgreSQL-backed topology and stores generated PostgreSQL credentials in its local `.env` file with mode `0600`. It does not create or bind-mount a SQLite database.
+
+For a production release, use immutable versioned images and a managed secret store rather than long-lived plaintext environment files.
+
+## Agent deployment scripts
+
+Agent deployment assets are stored under:
+
+```text
 cloudx-flask-backend/scripts/
 ├── windows/
 │   ├── cloudx-agent-installer.psm1
+│   ├── cloudx-agent-setup.ps1
 │   ├── cloudx-agent-uninstaller.psm1
-│   └── cloudx-code-signing.cer
+│   └── remove-threat.py
 ├── linux/
 │   ├── cloudx-agent-install.sh
 │   ├── cloudx-agent-setup.sh
-│   ├── remove-threat.py
-│   └── requirements.txt
+│   └── remove-threat.py
 └── mac/
     ├── cloudx-agent-install.sh
     └── cloudx-agent-setup.sh
 ```
 
-### File Synchronization
+The previous locally trusted code-signing certificate is no longer part of the current tree.
 
-The backend uses a heartbeat file (`sync_heartbeat.json`) for monitoring file synchronization status. The `/api/sync-status` endpoint checks this file's timestamp.
+## Scan execution limitation
+
+Scan processes still run in local background threads and active process handles remain in memory. Gunicorn therefore remains configured as a single worker with multiple threads. Moving scans to a durable queue is tracked separately in issue #25.
