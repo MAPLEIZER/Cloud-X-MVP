@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { ComingSoon } from '@/components/coming-soon'
+import { WazuhDashboard } from '@/components/pages/wazuh-dashboard'
 
 export const Route = createFileRoute('/_protected/apps/wazuh')({
-  component: ComingSoon,
+  component: WazuhDashboard,
 })

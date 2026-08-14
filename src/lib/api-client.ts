@@ -31,7 +31,103 @@ export interface SyncStatus {
   reason?: string
 }
 
+export interface SecurityEngineStatus {
+  provider: 'wazuh'
+  manager_connected: boolean
+  manager_version?: string | null
+  manager_host?: string | null
+  indexer_configured: boolean
+  indexer_status?: string | null
+}
+
+export interface SecurityOverview {
+  provider: 'wazuh'
+  agents: {
+    total: number
+    active: number
+    disconnected: number
+  }
+  alerts: {
+    sample_size: number
+    critical: number
+    high: number
+    latest_at?: string | null
+    available: boolean
+  }
+}
+
+export interface SecurityAgent {
+  id: string
+  name: string
+  ip?: string | null
+  status: string
+  groups: string[]
+  version?: string | null
+  node?: string | null
+  last_seen?: string | null
+  os: {
+    name?: string | null
+    version?: string | null
+    platform?: string | null
+    arch?: string | null
+  }
+}
+
+export interface SecurityAlert {
+  id: string
+  timestamp?: string | null
+  level: number
+  rule_id: string
+  description: string
+  groups: string[]
+  mitre_ids: string[]
+  agent: {
+    id: string
+    name?: string | null
+    ip?: string | null
+  }
+  manager?: string | null
+  location?: string | null
+}
+
+export interface SecurityScaPolicy {
+  policy_id: string
+  name: string
+  description?: string | null
+  passed: number
+  failed: number
+  invalid: number
+  total: number
+  score?: number | null
+  last_scan?: string | null
+}
+
+export interface SecurityFimRecord {
+  path?: string | null
+  type?: string | null
+  size?: number | null
+  permissions?: string | null
+  owner?: string | null
+  group?: string | null
+  sha256?: string | null
+  changes: number
+  modified_at?: string | null
+  observed_at?: string | null
+}
+
 type TokenProvider = () => Promise<string | null>
+
+export class CloudXApiError extends Error {
+  status: number
+  code?: string
+
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'CloudXApiError'
+    this.status = status
+    this.code = code
+  }
+}
 
 class CloudXApiClient {
   private baseURL: string
@@ -81,10 +177,14 @@ class CloudXApiClient {
       clearTimeout(timeoutId)
 
       if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ error: 'Unknown error' }))
-        throw new Error(errorData.error || `HTTP ${response.status}`)
+        const errorData = (await response.json().catch(() => ({
+          error: 'Unknown error',
+        }))) as { error?: string; code?: string }
+        throw new CloudXApiError(
+          errorData.error || `HTTP ${response.status}`,
+          response.status,
+          errorData.code
+        )
       }
 
       return await response.json()
@@ -137,6 +237,40 @@ class CloudXApiClient {
 
   async getScanHistory(): Promise<ScanStatus[]> {
     return this.request<ScanStatus[]>('/api/scans')
+  }
+
+  async getSecurityStatus(): Promise<SecurityEngineStatus> {
+    return this.request<SecurityEngineStatus>('/api/security/status')
+  }
+
+  async getSecurityOverview(): Promise<SecurityOverview> {
+    return this.request<SecurityOverview>('/api/security/overview')
+  }
+
+  async getSecurityAgents(limit: number = 100): Promise<SecurityAgent[]> {
+    return this.request<SecurityAgent[]>(`/api/security/agents?limit=${limit}`)
+  }
+
+  async getSecurityAlerts(limit: number = 50): Promise<SecurityAlert[]> {
+    return this.request<SecurityAlert[]>(`/api/security/alerts?limit=${limit}`)
+  }
+
+  async getSecuritySca(
+    agentId: string,
+    limit: number = 100
+  ): Promise<SecurityScaPolicy[]> {
+    return this.request<SecurityScaPolicy[]>(
+      `/api/security/sca?agent_id=${encodeURIComponent(agentId)}&limit=${limit}`
+    )
+  }
+
+  async getSecurityFim(
+    agentId: string,
+    limit: number = 100
+  ): Promise<SecurityFimRecord[]> {
+    return this.request<SecurityFimRecord[]>(
+      `/api/security/fim?agent_id=${encodeURIComponent(agentId)}&limit=${limit}`
+    )
   }
 
   setBaseURL(url: string): void {
