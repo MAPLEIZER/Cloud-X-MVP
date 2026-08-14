@@ -54,4 +54,4 @@ exec gunicorn \
     --timeout "${GUNICORN_TIMEOUT:-300}" \
     --access-logfile - \
     --error-logfile - \
-    app:app
+    server:app
