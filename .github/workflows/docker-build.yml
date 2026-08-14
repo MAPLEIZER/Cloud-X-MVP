@@ -6,7 +6,17 @@ on:
   push:
     branches:
       - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
   pull_request:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
 
 jobs:
   build_frontend:
@@ -15,13 +25,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
       - name: Build and export
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -29,19 +36,16 @@ jobs:
           file: Dockerfile.frontend
           tags: frontend:latest
           load: true
-
   build_backend:
     name: Build Backend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
       - name: Validate shell scripts
         run: |
           bash -n install_backend.sh
           find cloudx-flask-backend/scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
-
       - name: Validate PowerShell scripts
         shell: pwsh
         run: |
@@ -56,13 +60,10 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
       - name: Build and export
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
@@ -70,6 +71,5 @@ jobs:
           file: ./cloudx-flask-backend/Dockerfile
           tags: backend:latest
           load: true
-
       - name: Run backend security regression tests
         run: docker run --rm --entrypoint python backend:latest -m unittest discover -s /app/tests
