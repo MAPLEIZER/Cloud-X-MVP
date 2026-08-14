@@ -1,22 +1,54 @@
-#!/bin/bash
-set -e
+#!/bin/sh
+set -eu
 
-# Define file to store server identity
-IDENTITY_FILE="server_identity.json"
+IDENTITY_FILE="${IDENTITY_FILE:-server_identity.json}"
 
 if [ ! -f "$IDENTITY_FILE" ]; then
     echo "Initializing new Cloud-X Backend Node..."
-    # Generate UUID
-    SERVER_ID=$(python3 -c 'import uuid; print(str(uuid.uuid4()))')
-    echo "{\"server_id\": \"$SERVER_ID\", \"created_at\": \"$(date -Iseconds)\"}" > "$IDENTITY_FILE"
-    echo "Generated new Server ID: $SERVER_ID"
+    SERVER_ID="$(python3 -c 'import uuid; print(uuid.uuid4())')"
+    python3 - "$IDENTITY_FILE" "$SERVER_ID" <<'PY'
+import datetime
+import json
+import sys
+from datetime import timezone
+
+path, server_id = sys.argv[1:3]
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(
+        {
+            "server_id": server_id,
+            "created_at": datetime.datetime.now(timezone.utc).isoformat(),
+        },
+        handle,
+    )
+PY
+    chmod 0600 "$IDENTITY_FILE"
 else
-    SERVER_ID=$(python3 -c "import json; print(json.load(open('$IDENTITY_FILE'))['server_id'])")
-    echo "Loaded existing Server ID: $SERVER_ID"
+    SERVER_ID="$(python3 - "$IDENTITY_FILE" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    print(json.load(handle)["server_id"])
+PY
+)"
 fi
 
-# Export as env var for app to use
-export SERVER_ID=$SERVER_ID
+export SERVER_ID
 
-# Start Application
-exec python app.py
+python3 - <<'PY'
+from app import app, cleanup_stale_scans, db
+
+with app.app_context():
+    db.create_all()
+    cleanup_stale_scans()
+PY
+
+exec gunicorn \
+    --workers 1 \
+    --threads "${GUNICORN_THREADS:-8}" \
+    --bind "0.0.0.0:${PORT:-5001}" \
+    --timeout "${GUNICORN_TIMEOUT:-300}" \
+    --access-logfile - \
+    --error-logfile - \
+    app:app
