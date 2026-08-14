@@ -81,15 +81,16 @@ jobs:
           '
       - name: Smoke-test Nmap as the runtime user
         run: |
-          docker run --rm --entrypoint nmap backend:latest \
+          docker run --rm --cap-add NET_RAW --entrypoint nmap backend:latest \
             -T4 -F -v -oX - 127.0.0.1 >/dev/null
-      - name: Verify Alembic migrations on clean PostgreSQL
+      - name: Verify migrations and durable RQ scan lifecycle
         run: |
           set -euo pipefail
           network="cloudx-ci-${GITHUB_RUN_ID}"
           postgres="cloudx-postgres-${GITHUB_RUN_ID}"
+          redis="cloudx-redis-${GITHUB_RUN_ID}"
           cleanup() {
-            docker rm -f "$postgres" >/dev/null 2>&1 || true
+            docker rm -f "$postgres" "$redis" >/dev/null 2>&1 || true
             docker network rm "$network" >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
@@ -100,31 +101,55 @@ jobs:
             -e POSTGRES_USER=cloudx \
             -e POSTGRES_PASSWORD=cloudx-ci-password \
             postgres:17-alpine >/dev/null
+          docker run -d --name "$redis" --network "$network" \
+            redis:8-alpine redis-server --appendonly yes --appendfsync everysec >/dev/null
 
-          ready=0
+          postgres_ready=0
+          redis_ready=0
           for _ in $(seq 1 30); do
             if docker exec "$postgres" pg_isready -U cloudx -d cloudx >/dev/null 2>&1; then
-              ready=1
+              postgres_ready=1
+            fi
+            if docker exec "$redis" redis-cli ping 2>/dev/null | grep -qx PONG; then
+              redis_ready=1
+            fi
+            if [[ "$postgres_ready" = "1" && "$redis_ready" = "1" ]]; then
               break
             fi
             sleep 1
           done
-          test "$ready" = "1"
+          test "$postgres_ready" = "1"
+          test "$redis_ready" = "1"
 
-          migration_env=(
+          runtime_env=(
             -e "DATABASE_URL=postgresql+psycopg://cloudx:cloudx-ci-password@${postgres}:5432/cloudx"
+            -e "REDIS_URL=redis://${redis}:6379/0"
             -e "CLERK_SECRET_KEY=sk_test_ci_only"
             -e "CLERK_AUTHORIZED_PARTIES=http://localhost:5173"
             -e "CLERK_ALLOWED_USER_IDS=user_ci"
           )
 
-          docker run --rm --network "$network" "${migration_env[@]}" \
+          docker run --rm --network "$network" "${runtime_env[@]}" \
             --entrypoint alembic backend:latest upgrade head
           # A second upgrade must be a no-op rather than failing.
-          docker run --rm --network "$network" "${migration_env[@]}" \
+          docker run --rm --network "$network" "${runtime_env[@]}" \
             --entrypoint alembic backend:latest upgrade head
 
           test "$(docker exec "$postgres" psql -U cloudx -d cloudx -tAc "SELECT to_regclass('public.scan')")" = "scan"
-          test "$(docker exec "$postgres" psql -U cloudx -d cloudx -tAc "SELECT version_num FROM alembic_version")" = "20260814_0001"
+          test "$(docker exec "$postgres" psql -U cloudx -d cloudx -tAc "SELECT version_num FROM alembic_version")" = "20260814_0002"
+          test "$(docker exec "$postgres" psql -U cloudx -d cloudx -tAc "SELECT count(*) FROM information_schema.columns WHERE table_name='scan' AND column_name='updated_at'")" = "1"
+
+          # Seed in one short-lived process, then execute in a different worker
+          # container to prove jobs do not depend on the submitting/API process.
+          docker run --rm --network "$network" "${runtime_env[@]}" \
+            --entrypoint python backend:latest /app/tests/queue_integration_probe.py seed
+
+          docker run --rm --network "$network" --cap-add NET_RAW \
+            "${runtime_env[@]}" --entrypoint rq backend:latest \
+            worker --burst --worker-class scan_jobs.CloudXWorker \
+            --serializer json --url "redis://${redis}:6379/0" scans
+
+          docker run --rm --network "$network" "${runtime_env[@]}" \
+            --entrypoint python backend:latest /app/tests/queue_integration_probe.py verify
       - name: Run backend security regression tests
         run: docker run --rm --entrypoint python backend:latest -m unittest discover -s /app/tests
