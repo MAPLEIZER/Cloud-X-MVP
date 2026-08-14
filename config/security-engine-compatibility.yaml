@@ -1,0 +1,26 @@
+schema_version: 1
+provider: wazuh
+status: candidate
+release_support: pre-production
+
+manager:
+  tested_versions: []
+
+agent_packages:
+  candidate_version: "4.14.7-1"
+  windows: "4.14.7-1"
+  linux: "4.14.7-1"
+  macos: "4.14.7-1"
+
+validation_required_before_supported_release:
+  - wazuh_api_contract_tests
+  - windows_install_upgrade_uninstall_test
+  - linux_install_upgrade_uninstall_test
+  - macos_install_upgrade_uninstall_test
+  - tenant_isolation_tests
+  - signed_release_artifacts
+  - sbom_and_provenance
+
+notes:
+  - "Candidate versions reflect the current installer baseline; this file is not yet a support guarantee."
+  - "A version becomes supported only after the required validation matrix passes."
