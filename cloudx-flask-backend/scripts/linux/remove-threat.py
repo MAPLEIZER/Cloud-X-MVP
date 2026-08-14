@@ -1,527 +1,469 @@
-#!/usr/bin/python3
-# Copyright (C) 2023, Cloud-X Security
-# All rights reserved.
-# Wazuh Active Response Script - Threat Removal and Quarantine
-# GitHub: https://github.com/MAPLEIZER/Cloud-X-security-agent
-# Usage: 
-#   Download and deploy to: C:\Program Files (x86)\ossec-agent\active-response\bin\remove-threat.py
-#   Or use the automated installer which handles deployment automatically
+#!/usr/bin/env python3
+"""Cloud-X Wazuh active response: validated threat quarantine."""
 
-import os
-import sys
-import json
 import datetime
-import shutil
 import hashlib
-import subprocess
-import psutil
-import stat
-import platform
+import json
 import mimetypes
-from pathlib import Path
+import os
+import platform
+import secrets
+import shutil
+import stat
+import subprocess
+import sys
 
-# Wazuh Manager Configuration
-WAZUH_MANAGER = "192.168.100.37"
-AGENT_NAME = platform.node()  # Dynamic agent name based on hostname
+import psutil
 
-# Cross-platform log file location
-if os.name == 'nt':
-    LOG_FILE = "C:\\Program Files (x86)\\ossec-agent\\active-response\\active-responses.log"
-    QUARANTINE_DIR = os.path.expandvars("%TEMP%\\wazuh_quarantine")
-    SAFE_DIRS = [
-        os.path.expandvars("%USERPROFILE%\\Downloads"),
-        os.path.expandvars("%TEMP%"),
-        os.path.expandvars("%PUBLIC%\\Downloads")
+WAZUH_MANAGER = os.getenv("WAZUH_MANAGER", "configured-manager")
+AGENT_NAME = platform.node()
+MAX_INPUT_BYTES = 1024 * 1024
+MAX_PATH_LENGTH = 4096
+
+if os.name == "nt":
+    LOG_FILE = r"C:\Program Files (x86)\ossec-agent\active-response\active-responses.log"
+    QUARANTINE_DIR = os.path.join(
+        os.environ.get("ProgramData", r"C:\ProgramData"), "CloudX", "Quarantine"
+    )
+    DEFAULT_SAFE_DIRS = [
+        os.path.expandvars(r"%USERPROFILE%\Downloads"),
+        os.path.expandvars(r"%TEMP%"),
+        os.path.expandvars(r"%PUBLIC%\Downloads"),
     ]
 else:
     LOG_FILE = "/var/ossec/logs/active-responses.log"
-    QUARANTINE_DIR = "/tmp/wazuh_quarantine"
-    SAFE_DIRS = [
+    QUARANTINE_DIR = "/var/ossec/quarantine/cloudx"
+    DEFAULT_SAFE_DIRS = [
         os.path.expanduser("~/Downloads"),
         "/tmp",
-        "/var/tmp"
+        "/var/tmp",
     ]
 
-# Command constants
+SAFE_DIRS = [
+    item
+    for item in os.getenv("CLOUDX_SAFE_DIRS", os.pathsep.join(DEFAULT_SAFE_DIRS)).split(os.pathsep)
+    if item
+]
+
 ADD_COMMAND = 0
 DELETE_COMMAND = 1
 CONTINUE_COMMAND = 2
 ABORT_COMMAND = 3
-
-# Exit codes
 OS_SUCCESS = 0
 OS_INVALID = -1
 
-# Data structure to hold alert information and command type
+
 class Message:
     def __init__(self):
         self.alert = {}
         self.command = OS_INVALID
 
-# Structured JSON logging for SIEM integration
+
+def _safe_log_text(value, limit=2048):
+    text = str(value).replace("\r", "\\r").replace("\n", "\\n")
+    return text[:limit]
+
+
 def write_structured_log(action_data):
-    """Write structured JSON log entry for server-side processing"""
     try:
         log_entry = {
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "agent": AGENT_NAME,
             "manager": WAZUH_MANAGER,
-            **action_data
+            **action_data,
         }
-        
-        # Write to Wazuh log file
-        with open(LOG_FILE, "a") as log_file:
-            log_file.write(json.dumps(log_entry) + "\n")
-            
-    except IOError as e:
-        print(f"Could not write to log file {LOG_FILE}: {e}")
+        with open(LOG_FILE, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(log_entry, ensure_ascii=True) + "\n")
+    except OSError as exc:
+        print(f"Could not write active-response log: {_safe_log_text(exc)}", file=sys.stderr)
 
-# Legacy logging function for compatibility
+
 def write_log(ar_name, msg, level="INFO"):
     try:
-        timestamp = datetime.datetime.now().strftime('%Y/%m/%d %H:%M:%S')
-        with open(LOG_FILE, "a") as log_file:
-            log_file.write(f"{timestamp} [{level}] {ar_name}: {msg}\n")
-    except IOError as e:
-        print(f"Could not write to log file {LOG_FILE}: {e}")
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y/%m/%d %H:%M:%S UTC")
+        with open(LOG_FILE, "a", encoding="utf-8") as log_file:
+            log_file.write(
+                f"{timestamp} [{_safe_log_text(level, 16)}] "
+                f"{_safe_log_text(ar_name, 256)}: {_safe_log_text(msg)}\n"
+            )
+    except OSError as exc:
+        print(f"Could not write active-response log: {_safe_log_text(exc)}", file=sys.stderr)
 
-# Validates and parses the JSON alert sent from the Wazuh manager via stdin
+
+def _read_limited(handle):
+    data = handle.read(MAX_INPUT_BYTES + 1)
+    if len(data) > MAX_INPUT_BYTES:
+        raise ValueError("active-response input exceeds size limit")
+    return data
+
+
 def validate_input(alert_file=None):
-    """Validates and parses JSON alert from file or stdin"""
+    message = Message()
     try:
-        input_str = ""
         if alert_file:
-            with open(alert_file, 'r') as f:
-                input_str = f.read()
+            if os.getenv("CLOUDX_ALLOW_ALERT_FILE") != "1":
+                raise ValueError("--alert-file is disabled unless CLOUDX_ALLOW_ALERT_FILE=1")
+            with open(alert_file, "r", encoding="utf-8") as handle:
+                input_str = _read_limited(handle)
         else:
-            for line in sys.stdin:
-                input_str = line
-                break
+            input_str = sys.stdin.readline(MAX_INPUT_BYTES + 1)
+            if len(input_str) > MAX_INPUT_BYTES:
+                raise ValueError("active-response input exceeds size limit")
         data = json.loads(input_str)
-    except (ValueError, json.JSONDecodeError) as e:
-        write_log(sys.argv[0], f"Failed to decode JSON from stdin: {e}", "ERROR")
-        # Return a message with an invalid command if parsing fails.
-        m = Message()
-        m.command = OS_INVALID
-        return m
+        if not isinstance(data, dict):
+            raise ValueError("active-response input must be a JSON object")
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        write_log(sys.argv[0] if sys.argv else "remove-threat", f"Invalid input: {exc}", "ERROR")
+        return message
 
-    m = Message()
-    m.alert = data
-    command = data.get("command", "").lower()
-
+    command = str(data.get("command", "")).lower()
     if command == "add":
-        m.command = ADD_COMMAND
+        message.command = ADD_COMMAND
     elif command == "delete":
-        m.command = DELETE_COMMAND
+        message.command = DELETE_COMMAND
     else:
-        write_log(sys.argv[0], f"Invalid command: {command}", "ERROR")
-        m.command = OS_INVALID
-    return m
+        write_log(sys.argv[0], "Invalid active-response command", "ERROR")
+        return message
 
-# Sends keys to Wazuh manager for validation
+    message.alert = data
+    return message
+
+
 def send_keys_and_check(keys):
-    keys_msg = json.dumps({
-        "version": 1,
-        "origin": {"name": sys.argv[0], "module": "active-response"},
-        "command": "check_keys",
-        "parameters": {"keys": keys}
-    })
-    
-    write_log(sys.argv[0], keys_msg)
+    keys_msg = json.dumps(
+        {
+            "version": 1,
+            "origin": {"name": sys.argv[0], "module": "active-response"},
+            "command": "check_keys",
+            "parameters": {"keys": keys},
+        }
+    )
     print(keys_msg)
     sys.stdout.flush()
 
     try:
-        input_str = ""
-        while True:
-            line = sys.stdin.readline()
-            if line:
-                input_str = line
-                break
-        
+        input_str = sys.stdin.readline(MAX_INPUT_BYTES + 1)
+        if len(input_str) > MAX_INPUT_BYTES:
+            raise ValueError("manager response exceeds size limit")
         data = json.loads(input_str)
-        action = data.get("command", "").lower()
-        
+        action = str(data.get("command", "")).lower()
         if action == "continue":
             return CONTINUE_COMMAND
-        elif action == "abort":
+        if action == "abort":
             return ABORT_COMMAND
-        else:
-            write_log(sys.argv[0], f"Invalid response: {action}", "ERROR")
-            return OS_INVALID
-    except Exception as e:
-        write_log(sys.argv[0], f"Failed to parse response: {e}", "ERROR")
-        return OS_INVALID
+    except (ValueError, json.JSONDecodeError) as exc:
+        write_log(sys.argv[0], f"Invalid manager response: {exc}", "ERROR")
+    return OS_INVALID
 
-# Verify digital signature of executable files (Windows only)
+
 def verify_digital_signature(file_path):
-    if os.name != 'nt':
-        return True  # Skip on non-Windows systems
-    
-    try:
-        result = subprocess.run([
-            'powershell', '-Command',
-            f'Get-AuthenticodeSignature "{file_path}" | Select-Object -ExpandProperty Status'
-        ], capture_output=True, text=True, timeout=10)
-        
-        if result.returncode == 0:
-            status = result.stdout.strip()
-            if status in ['Valid', 'UnknownError']:  # UnknownError can be valid for some system files
-                return True
-            else:
-                write_log(sys.argv[0], f"Invalid signature for {file_path}: {status}", "WARNING")
-                return False
-    except Exception as e:
-        write_log(sys.argv[0], f"Signature verification error: {e}", "ERROR")
-    return False
+    if os.name != "nt":
+        return True
 
-# Verify file type using magic bytes, not just extension
+    command = [
+        "powershell.exe",
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        (
+            "& { param([string]$Path) "
+            "(Get-AuthenticodeSignature -LiteralPath $Path).Status.ToString() }"
+        ),
+        file_path,
+    ]
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        status = result.stdout.strip()
+        return result.returncode == 0 and status == "Valid"
+    except (OSError, subprocess.SubprocessError) as exc:
+        write_log(sys.argv[0], f"Signature verification failed: {exc}", "ERROR")
+        return False
+
+
 def verify_file_type(file_path):
     try:
-        # Get MIME type
         mime_type, _ = mimetypes.guess_type(file_path)
-        
-        # Read first few bytes to verify file signature
-        with open(file_path, 'rb') as f:
-            header = f.read(16)
-        
-        # Common executable signatures
-        exe_signatures = {
-            b'MZ': 'PE executable',
-            b'\x7fELF': 'ELF executable',
-            b'\xca\xfe\xba\xbe': 'Mach-O executable',
-            b'PK': 'ZIP/JAR archive'
+        with open(file_path, "rb") as handle:
+            header = handle.read(16)
+        signatures = {
+            b"MZ": "PE executable",
+            b"\x7fELF": "ELF executable",
+            b"\xca\xfe\xba\xbe": "Mach-O executable",
+            b"PK": "ZIP/JAR archive",
         }
-        
-        for sig, desc in exe_signatures.items():
-            if header.startswith(sig):
-                write_log(sys.argv[0], f"File type detected: {desc} for {file_path}")
-                return desc
-        
-        return mime_type or 'unknown'
-    except Exception as e:
-        write_log(sys.argv[0], f"File type verification error: {e}", "ERROR")
-        return 'unknown'
+        for signature, description in signatures.items():
+            if header.startswith(signature):
+                return description
+        return mime_type or "unknown"
+    except OSError as exc:
+        write_log(sys.argv[0], f"File type check failed: {exc}", "ERROR")
+        return "unknown"
 
-# Verify file ownership and permissions
-def verify_file_ownership(file_path):
+
+def _path_is_within(path, root):
     try:
-        file_stat = os.stat(file_path)
-        
-        # Check if file is world-writable (security risk)
-        if file_stat.st_mode & stat.S_IWOTH:
-            write_log(sys.argv[0], f"Security risk: World-writable file {file_path}", "WARNING")
-            return False
-        
-        # On Windows, check if file is owned by system or current user
-        if os.name == 'nt':
-            try:
-                import win32security
-                import win32api
-                
-                sd = win32security.GetFileSecurity(file_path, win32security.OWNER_SECURITY_INFORMATION)
-                owner_sid = sd.GetSecurityDescriptorOwner()
-                name, domain, type = win32security.LookupAccountSid(None, owner_sid)
-                
-                write_log(sys.argv[0], f"File owner: {domain}\\{name}")
-                return True
-            except ImportError:
-                write_log(sys.argv[0], "pywin32 not available for ownership check", "INFO")
-                return True
-        
-        return True
-    except Exception as e:
-        write_log(sys.argv[0], f"Ownership verification error: {e}", "ERROR")
+        candidate = os.path.normcase(os.path.abspath(path))
+        safe_root = os.path.normcase(os.path.abspath(root))
+        return os.path.commonpath([candidate, safe_root]) == safe_root
+    except (ValueError, OSError):
         return False
 
-# Kill malicious processes with recursive child termination
-def kill_malicious_processes(file_path):
-    """Terminate processes and their children recursively"""
-    try:
-        killed_processes = []
-        file_name = os.path.basename(file_path)
-        
-        def kill_process_tree(pid):
-            """Recursively kill process and all children"""
-            try:
-                parent = psutil.Process(pid)
-                children = parent.children(recursive=True)
-                
-                # Kill children first
-                for child in children:
-                    try:
-                        child.terminate()
-                        killed_processes.append(child.pid)
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                
-                # Kill parent
-                parent.terminate()
-                killed_processes.append(pid)
-                
-                # Wait for graceful termination
-                gone, still_alive = psutil.wait_procs([parent] + children, timeout=3)
-                
-                # Force kill if still alive
-                for proc in still_alive:
-                    try:
-                        proc.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-                        
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-        
-        # Find and terminate processes using the malicious file
-        for proc in psutil.process_iter(['pid', 'name', 'exe']):
-            try:
-                if proc.info['exe'] and os.path.samefile(proc.info['exe'], file_path):
-                    kill_process_tree(proc.info['pid'])
-                elif proc.info['name'] and proc.info['name'].lower() == file_name.lower():
-                    kill_process_tree(proc.info['pid'])
-            except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-                continue
-            
-        return killed_processes
-    except Exception as e:
-        write_log(sys.argv[0], f"Process termination error: {e}", "ERROR")
-        return []
 
-# Enable PowerShell logging (integrate PowerShell script functionality)
-def enable_powershell_logging():
-    if os.name != 'nt':
-        return True
-    
-    try:
-        ps_script = '''
-        $basePath = "HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows\\PowerShell\\ScriptBlockLogging"
-        if (!(Test-Path $basePath)) {
-            New-Item -Path $basePath -Force | Out-Null
-        }
-        Set-ItemProperty -Path $basePath -Name "EnableScriptBlockLogging" -Value 1 -Type DWord
-        Write-Output "PowerShell logging enabled"
-        '''
-        
-        result = subprocess.run(['powershell', '-Command', ps_script], 
-                              capture_output=True, text=True, timeout=30)
-        
-        if result.returncode == 0:
-            write_log(sys.argv[0], "PowerShell script block logging enabled")
-            return True
-        else:
-            write_log(sys.argv[0], f"Failed to enable PowerShell logging: {result.stderr}", "ERROR")
-            return False
-    except Exception as e:
-        write_log(sys.argv[0], f"PowerShell logging setup error: {e}", "ERROR")
-        return False
-
-# Check if file path is in safe directories with enhanced security
-def is_safe_path(path_to_check):
-    try:
-        abs_path = os.path.abspath(path_to_check)
-        
-        # Block symbolic links
-        if os.path.islink(abs_path):
-            write_log(sys.argv[0], f"Blocked symlink: {path_to_check}", "WARNING")
-            return False
-        
-        # Verify file ownership and permissions
-        if not verify_file_ownership(abs_path):
-            write_log(sys.argv[0], f"File ownership/permissions check failed: {path_to_check}", "WARNING")
-            return False
-        
-        # Check if path is in safe directories
-        is_safe = any(abs_path.startswith(os.path.abspath(d)) for d in SAFE_DIRS)
-        
-        if not is_safe:
-            write_log(sys.argv[0], f"Blocked unsafe path: {path_to_check}", "WARNING")
-            return False
-            
-        return True
-    except Exception as e:
-        write_log(sys.argv[0], f"Path safety check error: {e}", "ERROR")
-        return False
-
-# Calculate SHA256 hash of file
-def calculate_hash(file_path):
-    try:
-        sha256_hash = hashlib.sha256()
-        with open(file_path, "rb") as f:
-            for byte_block in iter(lambda: f.read(4096), b""):
-                sha256_hash.update(byte_block)
-        return sha256_hash.hexdigest()
-    except (IOError, OSError) as e:
-        write_log(sys.argv[0], f"Hash calculation error: {e}", "ERROR")
+def resolve_safe_file(path_to_check):
+    if not isinstance(path_to_check, str) or not path_to_check or len(path_to_check) > MAX_PATH_LENGTH:
+        return None
+    if "\x00" in path_to_check:
         return None
 
-# Lightweight quarantine with structured logging
-def quarantine_file(file_path, rule_id, dry_run=False):
-    """Fast, minimal quarantine with structured JSON logging"""
-    if not os.path.exists(file_path):
-        write_structured_log({
-            "file": file_path,
-            "rule_id": rule_id,
-            "action": "file_not_found",
-            "status": "warning"
-        })
-        return
+    try:
+        if os.path.islink(path_to_check):
+            return None
+        resolved = os.path.realpath(path_to_check)
+        info = os.stat(resolved, follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode):
+            return None
 
-    # Fast security checks
+        safe_roots = [os.path.realpath(root) for root in SAFE_DIRS if root]
+        if not any(_path_is_within(resolved, root) for root in safe_roots):
+            return None
+
+        return resolved, (info.st_dev, info.st_ino)
+    except OSError:
+        return None
+
+
+def _same_file_identity(file_path, expected_identity):
+    try:
+        info = os.stat(file_path, follow_symlinks=False)
+        return (info.st_dev, info.st_ino) == expected_identity and stat.S_ISREG(info.st_mode)
+    except OSError:
+        return False
+
+
+def calculate_hash(file_path):
+    try:
+        digest = hashlib.sha256()
+        with open(file_path, "rb") as handle:
+            for block in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
+    except OSError as exc:
+        write_log(sys.argv[0], f"Hash calculation failed: {exc}", "ERROR")
+        return None
+
+
+def kill_malicious_processes(file_path):
+    killed = []
+
+    def kill_tree(pid):
+        try:
+            parent = psutil.Process(pid)
+            children = parent.children(recursive=True)
+            for child in children:
+                try:
+                    child.terminate()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            try:
+                parent.terminate()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+            _, alive = psutil.wait_procs([parent, *children], timeout=3)
+            for process in alive:
+                try:
+                    process.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            killed.extend([process.pid for process in [parent, *children]])
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+    for process in psutil.process_iter(["pid", "exe"]):
+        try:
+            executable = process.info.get("exe")
+            if executable and os.path.samefile(executable, file_path):
+                kill_tree(process.info["pid"])
+        except (OSError, psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    return sorted(set(killed))
+
+
+def _prepare_quarantine_dir():
+    os.makedirs(QUARANTINE_DIR, mode=0o700, exist_ok=True)
+    if os.name != "nt":
+        os.chmod(QUARANTINE_DIR, 0o700)
+
+
+def quarantine_file(file_path, expected_identity, rule_id, dry_run=False):
+    if not _same_file_identity(file_path, expected_identity):
+        write_structured_log(
+            {"file": file_path, "rule_id": rule_id, "action": "file_changed", "status": "blocked"}
+        )
+        return False
+
     file_hash = calculate_hash(file_path)
     file_type = verify_file_type(file_path)
-    
-    # Terminate processes first (critical for containment)
-    killed_pids = kill_malicious_processes(file_path)
-    
-    # Check digital signature only for executables (performance optimization)
     signature_valid = True
-    if file_type and 'executable' in file_type.lower():
+    if file_type and "executable" in file_type.lower():
         signature_valid = verify_digital_signature(file_path)
 
     if dry_run:
-        write_structured_log({
-            "file": file_path,
-            "hash": file_hash,
-            "rule_id": rule_id,
-            "action": "dry_run",
-            "file_type": file_type,
-            "processes_terminated": killed_pids,
-            "signature_valid": signature_valid
-        })
-        return
+        write_structured_log(
+            {
+                "file": file_path,
+                "hash": file_hash,
+                "rule_id": rule_id,
+                "action": "dry_run",
+                "file_type": file_type,
+                "processes_terminated": [],
+                "signature_valid": signature_valid,
+                "status": "success",
+            }
+        )
+        return True
+
+    killed_pids = kill_malicious_processes(file_path)
+    if not _same_file_identity(file_path, expected_identity):
+        write_structured_log(
+            {"file": file_path, "rule_id": rule_id, "action": "file_changed", "status": "blocked"}
+        )
+        return False
 
     try:
-        # Fast quarantine operation
-        os.makedirs(QUARANTINE_DIR, exist_ok=True)
-        dest_name = f"{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{os.path.basename(file_path)}"
-        dest_path = os.path.join(QUARANTINE_DIR, dest_name)
-        
-        shutil.move(file_path, dest_path)
-        
-        # Structured JSON log for server processing
-        write_structured_log({
-            "file": file_path,
-            "hash": file_hash,
-            "rule_id": rule_id,
-            "action": "quarantine",
-            "quarantine_path": dest_path,
-            "file_type": file_type,
-            "processes_terminated": killed_pids,
-            "signature_valid": signature_valid,
-            "status": "success"
-        })
-        
-        # Minimal metadata for forensics
+        _prepare_quarantine_dir()
+        token = secrets.token_hex(8)
+        timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M%S")
+        destination = os.path.join(
+            QUARANTINE_DIR,
+            f"{timestamp}_{token}_{os.path.basename(file_path)}",
+        )
+        shutil.move(file_path, destination)
+        if os.name != "nt":
+            os.chmod(destination, 0o600)
+
         metadata = {
             "original_path": file_path,
-            "quarantine_path": dest_path,
+            "quarantine_path": destination,
             "file_hash": file_hash,
             "file_type": file_type,
-            "timestamp": datetime.datetime.now().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "killed_processes": killed_pids,
-            "rule_id": rule_id
-        }
-        
-        metadata_path = dest_path + ".metadata.json"
-        with open(metadata_path, 'w') as f:
-            json.dump(metadata, f, indent=2)
-            
-    except (OSError, IOError) as e:
-        write_structured_log({
-            "file": file_path,
-            "hash": file_hash,
             "rule_id": rule_id,
-            "action": "quarantine_failed",
-            "error": str(e),
-            "status": "error"
-        })
+            "signature_valid": signature_valid,
+        }
+        metadata_path = destination + ".metadata.json"
+        with open(metadata_path, "x", encoding="utf-8") as handle:
+            json.dump(metadata, handle, indent=2, ensure_ascii=True)
+        if os.name != "nt":
+            os.chmod(metadata_path, 0o600)
 
-# Main function with enhanced security features
-def main():
-    write_log(sys.argv[0], "Cloud-X Security Threat Response Started")
-    
-    # Enable PowerShell logging on Windows
-    if os.name == 'nt':
-        enable_powershell_logging()
-    
-    dry_run = '--dry-run' in sys.argv
-    alert_file = None
-    if '--alert-file' in sys.argv:
-        try:
-            alert_file_index = sys.argv.index('--alert-file') + 1
-            if alert_file_index < len(sys.argv):
-                alert_file = sys.argv[alert_file_index]
-        except (ValueError, IndexError):
-            pass
-
-    if dry_run:
-        write_log(sys.argv[0], "Dry run mode enabled")
-    
-    # Validate input
-    msg = validate_input(alert_file)
-    if msg.command < 0:
-        sys.exit(OS_INVALID)
-
-    if msg.command == ADD_COMMAND:
-        alert = msg.alert.get("parameters", {}).get("alert", {})
-        if not alert:
-            write_log(sys.argv[0], "Alert data missing", "ERROR")
-            sys.exit(OS_INVALID)
-
-        rule_id = alert.get("rule", {}).get("id")
-        if not rule_id:
-            write_log(sys.argv[0], "Rule ID missing", "ERROR")
-            sys.exit(OS_INVALID)
-
-        # Check with manager (skip in dry-run mode for testing)
-        action = CONTINUE_COMMAND
-        if not dry_run:
-            action = send_keys_and_check([rule_id])
-
-        if action != CONTINUE_COMMAND:
-            if action == ABORT_COMMAND:
-                write_log(sys.argv[0], "Aborted by manager")
-            sys.exit(OS_SUCCESS if action == ABORT_COMMAND else OS_INVALID)
-
-        # Get file path from alert (support multiple sources)
-        file_path = None
-        
-        # Try VirusTotal data first
-        vt_data = alert.get("data", {}).get("virustotal", {})
-        if vt_data:
-            file_path = vt_data.get("source", {}).get("file")
-        
-        # Fallback to syscheck data
-        if not file_path:
-            syscheck_data = alert.get("syscheck", {})
-            if syscheck_data:
-                file_path = syscheck_data.get("path")
-        
-        # Fallback to general data field
-        if not file_path:
-            file_path = alert.get("data", {}).get("file")
-        
-        if not file_path:
-            write_log(sys.argv[0], "File path not found in alert", "ERROR")
-            sys.exit(OS_INVALID)
-
-        # Fast path validation and quarantine
-        if is_safe_path(file_path):
-            quarantine_file(os.path.abspath(file_path), rule_id, dry_run)
-        else:
-            write_structured_log({
+        write_structured_log(
+            {
                 "file": file_path,
+                "hash": file_hash,
+                "rule_id": rule_id,
+                "action": "quarantine",
+                "quarantine_path": destination,
+                "file_type": file_type,
+                "processes_terminated": killed_pids,
+                "signature_valid": signature_valid,
+                "status": "success",
+            }
+        )
+        return True
+    except OSError as exc:
+        write_structured_log(
+            {
+                "file": file_path,
+                "hash": file_hash,
+                "rule_id": rule_id,
+                "action": "quarantine_failed",
+                "error": _safe_log_text(exc),
+                "status": "error",
+            }
+        )
+        return False
+
+
+def _extract_alert_file(alert):
+    virustotal = alert.get("data", {}).get("virustotal", {})
+    if isinstance(virustotal, dict):
+        source = virustotal.get("source", {})
+        if isinstance(source, dict) and source.get("file"):
+            return source.get("file")
+
+    syscheck = alert.get("syscheck", {})
+    if isinstance(syscheck, dict) and syscheck.get("path"):
+        return syscheck.get("path")
+
+    data = alert.get("data", {})
+    if isinstance(data, dict):
+        return data.get("file")
+    return None
+
+
+def main():
+    dry_run = "--dry-run" in sys.argv
+    alert_file = None
+    if "--alert-file" in sys.argv:
+        try:
+            alert_file = sys.argv[sys.argv.index("--alert-file") + 1]
+        except (ValueError, IndexError):
+            return OS_INVALID
+
+    message = validate_input(alert_file)
+    if message.command < 0:
+        return OS_INVALID
+    if message.command == DELETE_COMMAND:
+        return OS_SUCCESS
+
+    alert = message.alert.get("parameters", {}).get("alert", {})
+    if not isinstance(alert, dict):
+        return OS_INVALID
+
+    rule_id = str(alert.get("rule", {}).get("id", ""))
+    if not rule_id or len(rule_id) > 64:
+        return OS_INVALID
+
+    if not dry_run:
+        action = send_keys_and_check([rule_id])
+        if action == ABORT_COMMAND:
+            return OS_SUCCESS
+        if action != CONTINUE_COMMAND:
+            return OS_INVALID
+
+    file_path = _extract_alert_file(alert)
+    safe_file = resolve_safe_file(file_path)
+    if not safe_file:
+        write_structured_log(
+            {
+                "file": _safe_log_text(file_path, 1024),
                 "rule_id": rule_id,
                 "action": "blocked_unsafe_path",
-                "status": "security_violation"
-            })
+                "status": "security_violation",
+            }
+        )
+        return OS_INVALID
 
-    write_log(sys.argv[0], "Cloud-X Security Threat Response Completed")
-    sys.exit(OS_SUCCESS)
+    resolved_path, identity = safe_file
+    return OS_SUCCESS if quarantine_file(resolved_path, identity, rule_id, dry_run) else OS_INVALID
+
 
 if __name__ == "__main__":
     try:
-        main()
-    except Exception as e:
-        write_log(sys.argv[0] if sys.argv else "ThreatResponse", f"Unhandled exception: {e}", "ERROR")
+        sys.exit(main())
+    except Exception as exc:
+        write_log(
+            sys.argv[0] if sys.argv else "remove-threat",
+            f"Unhandled exception: {exc}",
+            "ERROR",
+        )
         sys.exit(OS_INVALID)

@@ -1,70 +1,44 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
+umask 027
 
-# =========================================================================================
-# Cloud-X Security Post-Installation Setup (macOS)
-# =========================================================================================
-
-# --- Configuration ---
 WAZUH_PATH="/Library/Ossec"
 ACTIVE_RESPONSE_BIN="$WAZUH_PATH/active-response/bin"
 ETC_DIR="$WAZUH_PATH/etc"
-SCRIPT_DIR="$(dirname "$0")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 THREAT_SCRIPT="$SCRIPT_DIR/remove-threat.py"
-REQUIREMENTS="$SCRIPT_DIR/requirements.txt"
 
-# --- Colors ---
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+log() { printf '[Cloud-X] %s\n' "$*"; }
+fail() { printf '[Cloud-X] ERROR: %s\n' "$*" >&2; exit 1; }
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
-
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log_error "Please run as root (sudo)."
-        exit 1
-    fi
-}
-
-check_root
-
-log_info "Starting Post-Installation Setup..."
-
-# 1. Install Dependencies
-log_info "Installing Python dependencies..."
-# Check for pip3
-if command -v pip3 >/dev/null 2>&1; then
-    pip3 install -r "$REQUIREMENTS" --break-system-packages >/dev/null 2>&1 || pip3 install -r "$REQUIREMENTS" >/dev/null 2>&1
-    log_info "Dependencies installed."
-else
-    log_warn "pip3 not found. Please ensure python3 and pip3 are installed."
-    # Attempt to use python3 -m pip
-    if command -v python3 >/dev/null 2>&1; then
-         python3 -m pip install -r "$REQUIREMENTS" --break-system-packages >/dev/null 2>&1 || python3 -m pip install -r "$REQUIREMENTS" >/dev/null 2>&1
-         log_info "Dependencies installed via python3 module."
-    fi
+if (( EUID != 0 )); then
+    fail "Run this setup as root."
 fi
 
-# 2. Deploy Active Response Script
-log_info "Deploying Active Response script..."
-if [ -f "$THREAT_SCRIPT" ]; then
-    cp "$THREAT_SCRIPT" "$ACTIVE_RESPONSE_BIN/remove-threat.py"
-    chmod 750 "$ACTIVE_RESPONSE_BIN/remove-threat.py"
-    chown root:wazuh "$ACTIVE_RESPONSE_BIN/remove-threat.py" 2>/dev/null || chown root:admin "$ACTIVE_RESPONSE_BIN/remove-threat.py"
-    log_info "Script deployed to $ACTIVE_RESPONSE_BIN/remove-threat.py"
-else
-    log_error "remove-threat.py not found in $SCRIPT_DIR"
+command -v python3 >/dev/null 2>&1 \
+    || fail "Python 3 must be pre-provisioned through an approved software-management process."
+python3 -c 'import psutil' >/dev/null 2>&1 \
+    || fail "Python psutil must be pre-provisioned through an approved software-management process."
+[[ -f "$THREAT_SCRIPT" ]] || fail "remove-threat.py is missing from the deployment bundle."
+[[ -d "$ACTIVE_RESPONSE_BIN" ]] || fail "Wazuh active-response directory does not exist."
+
+OWNER_GROUP="admin"
+if dscl . -read /Groups/wazuh >/dev/null 2>&1; then
+    OWNER_GROUP="wazuh"
 fi
 
-# 3. Configure Active Response
-log_info "Configuring Active Response..."
+# The shared hardened response script uses the Linux Wazuh prefix by default.
+# Render a macOS-local copy so logs and quarantine remain inside /Library/Ossec.
+TEMP_RESPONSE="$(mktemp /tmp/cloudx-remove-threat.XXXXXX)"
+trap 'rm -f -- "$TEMP_RESPONSE"' EXIT INT TERM
+sed 's#/var/ossec#/Library/Ossec#g' "$THREAT_SCRIPT" > "$TEMP_RESPONSE"
+install -o root -g "$OWNER_GROUP" -m 0750 \
+    "$TEMP_RESPONSE" "$ACTIVE_RESPONSE_BIN/remove-threat.py"
+rm -f -- "$TEMP_RESPONSE"
+trap - EXIT INT TERM
+
 CONF_FILE="$ETC_DIR/cloudx_active_response.conf"
-
-cat > "$CONF_FILE" << EOF
+cat > "$CONF_FILE" <<'EOF'
 <!-- Cloud-X Security Active Response Configuration -->
 <command>
   <name>remove-threat</name>
@@ -79,12 +53,13 @@ cat > "$CONF_FILE" << EOF
   <timeout>60</timeout>
 </active-response>
 EOF
+chown root:"$OWNER_GROUP" "$CONF_FILE"
+chmod 0640 "$CONF_FILE"
 
-chmod 640 "$CONF_FILE"
-chown root:wazuh "$CONF_FILE" 2>/dev/null || chown root:admin "$CONF_FILE"
-log_info "Configuration created at $CONF_FILE"
+install -d -o root -g "$OWNER_GROUP" -m 0700 "$WAZUH_PATH/quarantine/cloudx"
 
-# 4. Restart Service
-log_info "Restarting Wazuh Agent..."
-/Library/Ossec/bin/wazuh-control restart
-log_info "Post-installation setup complete."
+if launchctl print system/com.wazuh.agent >/dev/null 2>&1; then
+    launchctl kickstart -k system/com.wazuh.agent
+fi
+
+log "macOS active-response setup complete."

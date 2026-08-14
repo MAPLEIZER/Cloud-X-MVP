@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   backend:
     build: .
@@ -7,10 +5,26 @@ services:
     container_name: cloudx-backend
     ports:
       - "5001:5001"
-    volumes:
-      - ./scans.db:/app/scans.db
-      - ./server_identity.json:/app/server_identity.json
-      # Mount scans results or logs if needed
+    env_file:
+      - .env
     environment:
-      - FLASK_ENV=production
+      DATABASE_PATH: /data/scans.db
+      IDENTITY_FILE: /data/server_identity.json
+    volumes:
+      - cloudx_data:/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  cloudx_data:

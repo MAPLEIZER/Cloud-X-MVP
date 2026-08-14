@@ -9,5 +9,12 @@ dist/
 build/
 *.egg-info/
 .env
+.env.*
+!.env.example
 scans.db
+*.db
+*.sqlite
+*.sqlite3
+server_identity.json
+sync_heartbeat.json
 *.log

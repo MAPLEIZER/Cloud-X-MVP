@@ -1,72 +1,46 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
+umask 027
 
-# =========================================================================================
-# Cloud-X Security Post-Installation Setup (Linux)
-# =========================================================================================
-
-# --- Configuration ---
 WAZUH_PATH="/var/ossec"
 ACTIVE_RESPONSE_BIN="$WAZUH_PATH/active-response/bin"
 ETC_DIR="$WAZUH_PATH/etc"
-SCRIPT_DIR="$(dirname "$(readlink -f "$0")")"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 THREAT_SCRIPT="$SCRIPT_DIR/remove-threat.py"
-REQUIREMENTS="$SCRIPT_DIR/requirements.txt"
 
-# --- Colors ---
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
+log() { printf '[Cloud-X] %s\n' "$*"; }
+fail() { printf '[Cloud-X] ERROR: %s\n' "$*" >&2; exit 1; }
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+if (( EUID != 0 )); then
+    fail "Run this setup as root."
+fi
 
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log_error "Please run as root."
-        exit 1
-    fi
-}
-
-check_root
-
-log_info "Starting Post-Installation Setup..."
-
-# 1. Install Dependencies
-log_info "Installing Python dependencies..."
-if command -v pip3 >/dev/null 2>&1; then
-    pip3 install -r "$REQUIREMENTS" >/dev/null 2>&1
-    log_info "Dependencies installed."
-else
-    log_warn "pip3 not found. Attempting to install 'psutil' using system package manager..."
-    # Fallback to system package if pip is missing
-    if [ -f /etc/debian_version ]; then
-        apt-get update -qq && apt-get install python3-psutil -y -qq
-    elif [ -f /etc/redhat-release ]; then
-        yum install python3-psutil -y -q
+if ! python3 -c 'import psutil' >/dev/null 2>&1; then
+    log "Installing psutil from the operating-system package repository."
+    if command -v apt-get >/dev/null 2>&1; then
+        export DEBIAN_FRONTEND=noninteractive
+        apt-get update -qq
+        apt-get install -y -qq --no-install-recommends python3-psutil
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y python3-psutil
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y python3-psutil
     else
-        log_error "Could not install dependencies. Please install 'python3-psutil' manually."
+        fail "No supported package manager was found for python3-psutil."
     fi
 fi
 
-# 2. Deploy Active Response Script
-log_info "Deploying Active Response script..."
-if [ -f "$THREAT_SCRIPT" ]; then
-    cp "$THREAT_SCRIPT" "$ACTIVE_RESPONSE_BIN/remove-threat.py"
-    chmod 750 "$ACTIVE_RESPONSE_BIN/remove-threat.py"
-    chown root:wazuh "$ACTIVE_RESPONSE_BIN/remove-threat.py" 2>/dev/null || chown root:root "$ACTIVE_RESPONSE_BIN/remove-threat.py"
-    log_info "Script deployed to $ACTIVE_RESPONSE_BIN/remove-threat.py"
-else
-    log_error "remove-threat.py not found in $SCRIPT_DIR"
+python3 -c 'import psutil' >/dev/null 2>&1 || fail "psutil is unavailable after installation."
+[[ -f "$THREAT_SCRIPT" ]] || fail "remove-threat.py is missing from the installer bundle."
+[[ -d "$ACTIVE_RESPONSE_BIN" ]] || fail "Wazuh active-response directory does not exist."
+
+install -o root -g root -m 0750 "$THREAT_SCRIPT" "$ACTIVE_RESPONSE_BIN/remove-threat.py"
+if getent group wazuh >/dev/null 2>&1; then
+    chgrp wazuh "$ACTIVE_RESPONSE_BIN/remove-threat.py"
 fi
 
-# 3. Configure Active Response
-log_info "Configuring Active Response..."
 CONF_FILE="$ETC_DIR/cloudx_active_response.conf"
-
-cat > "$CONF_FILE" << EOF
+cat > "$CONF_FILE" <<'EOF'
 <!-- Cloud-X Security Active Response Configuration -->
 <command>
   <name>remove-threat</name>
@@ -81,12 +55,15 @@ cat > "$CONF_FILE" << EOF
   <timeout>60</timeout>
 </active-response>
 EOF
+chmod 0640 "$CONF_FILE"
+if getent group wazuh >/dev/null 2>&1; then
+    chown root:wazuh "$CONF_FILE"
+else
+    chown root:root "$CONF_FILE"
+fi
 
-chmod 640 "$CONF_FILE"
-chown root:wazuh "$CONF_FILE" 2>/dev/null || chown root:root "$CONF_FILE"
-log_info "Configuration created at $CONF_FILE"
-
-# 4. Restart Service
-log_info "Restarting Wazuh Agent..."
+install -d -o root -g root -m 0700 /var/ossec/quarantine/cloudx
 systemctl restart wazuh-agent
-log_info "Post-installation setup complete."
+systemctl is-active --quiet wazuh-agent || fail "Wazuh agent failed after active-response setup."
+
+log "Active-response setup complete."
