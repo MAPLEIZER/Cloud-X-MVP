@@ -16,7 +16,14 @@ export interface ScanStatus {
   tool: string
   target: string
   scan_type: string
-  status: 'submitted' | 'running' | 'completed' | 'failed' | 'stopped'
+  status:
+    | 'submitted'
+    | 'queued'
+    | 'running'
+    | 'stopping'
+    | 'completed'
+    | 'failed'
+    | 'stopped'
   progress?: number
   results?: Record<string, unknown>
   created_at: string
