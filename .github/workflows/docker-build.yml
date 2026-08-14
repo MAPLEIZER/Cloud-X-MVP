@@ -37,6 +37,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - name: Validate shell scripts
+        run: |
+          bash -n install_backend.sh
+          find cloudx-flask-backend/scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      - name: Validate PowerShell scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem -Path cloudx-flask-backend,cloudx-security-agent -Recurse -File -Include *.ps1,*.psm1 | ForEach-Object {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              Write-Error "PowerShell syntax errors in $($_.FullName): $($errors -join '; ')"
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
