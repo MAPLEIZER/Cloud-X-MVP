@@ -1,9 +1,16 @@
-# Security-sensitive ownership
+# Cloud-X ownership and governance
 * @MAPLEIZER
 
 /cloudx-flask-backend/ @MAPLEIZER
 /cloudx-security-agent/ @MAPLEIZER
 /.github/workflows/ @MAPLEIZER
+/.github/CODEOWNERS @MAPLEIZER
+/.missionkit/ @MAPLEIZER
+/scripts/ci/branch_policy.py @MAPLEIZER
+/tests/test_branch_policy.py @MAPLEIZER
+/docs/operations/ @MAPLEIZER
+/AGENTS.md @MAPLEIZER
+/CONTRIBUTING.md @MAPLEIZER
 /SECURITY.md @MAPLEIZER
 /docs/ARCHITECTURE.md @MAPLEIZER
 /packaging/ @MAPLEIZER

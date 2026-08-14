@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cloud-X branch governance policy",
+  "type": "object",
+  "required": ["version", "mode", "permanent_branches", "agent_lanes", "edges", "bounded_prefixes", "automation"],
+  "properties": {
+    "version": {"type": "integer", "minimum": 1},
+    "mode": {"enum": ["report-only", "enforce"]},
+    "permanent_branches": {"type": "array", "minItems": 5, "uniqueItems": true, "items": {"type": "string"}},
+    "agent_lanes": {"type": "object", "required": ["backend", "frontend"], "additionalProperties": {"type": "string"}},
+    "edges": {"type": "object"},
+    "bounded_prefixes": {"type": "object"},
+    "automation": {"type": "object", "required": ["owner_gated_merges", "auto_merge", "delete_branch_on_merge", "branch_manager_enabled", "lane_sync_enabled", "audit_apply_enabled"]}
+  },
+  "additionalProperties": true
+}
