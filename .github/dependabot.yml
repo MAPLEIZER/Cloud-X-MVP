@@ -13,9 +13,6 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "github-actions"
-      - "security"
-      - "ci"
     groups:
       github-actions-minor-patch:
         patterns:
@@ -41,8 +38,7 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "frontend"
-      - "security"
+      - "javascript"
     groups:
       npm-minor-patch:
         applies-to: "version-updates"
@@ -73,9 +69,6 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "backend"
-      - "python"
-      - "security"
     groups:
       python-minor-patch:
         applies-to: "version-updates"
@@ -100,8 +93,6 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "docker"
-      - "security"
 
   - package-ecosystem: "docker"
     directory: "/cloudx-flask-backend"
@@ -114,5 +105,3 @@ updates:
       include: "scope"
     labels:
       - "dependencies"
-      - "docker"
-      - "security"
