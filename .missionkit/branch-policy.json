@@ -1,7 +1,7 @@
 {
   "$schema": "./branch-policy.schema.json",
-  "version": 2,
-  "mode": "report-only",
+  "version": 3,
+  "mode": "enforce",
   "permanent_branches": [
     "main",
     "staging",
@@ -23,8 +23,15 @@
   "bounded_prefixes": {
     "promote/": {"enabled": false, "future_role": "branch-manager", "max_age_hours": 72, "requires_open_pr": true},
     "salvage/": {"enabled": false, "future_role": "branch-manager", "max_age_hours": 168, "requires_open_pr": false},
-    "dependabot/": {"enabled": true, "mode": "report-only", "max_age_hours": 336, "requires_open_pr": true, "pr_base": "dev", "never_auto_merge": true},
+    "dependabot/": {"enabled": true, "mode": "enforce", "max_age_hours": 336, "requires_open_pr": true, "pr_base": "dev", "required_actor": "dependabot[bot]", "never_auto_merge": true},
     "security-autofix/": {"enabled": false, "future_role": "verified-security-bot", "max_age_hours": 168, "requires_open_pr": true, "pr_base": "dev", "require_draft_pr": true, "never_auto_merge": true}
+  },
+  "enforcement": {
+    "pr_routing": true,
+    "push_classification": true,
+    "scheduled_audit": true,
+    "destructive_recovery": false,
+    "legacy_branch_cleanup": "report-only"
   },
   "automation": {
     "owner_gated_merges": true,
