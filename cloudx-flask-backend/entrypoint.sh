@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-IDENTITY_FILE="${IDENTITY_FILE:-server_identity.json}"
+IDENTITY_FILE="${IDENTITY_FILE:-/data/server_identity.json}"
 
 if [ ! -f "$IDENTITY_FILE" ]; then
     echo "Initializing new Cloud-X Backend Node..."
@@ -36,11 +36,14 @@ fi
 
 export SERVER_ID
 
+# Database schema changes are explicit and versioned. Startup fails closed when
+# the configured PostgreSQL database cannot be migrated.
+alembic upgrade head
+
 python3 - <<'PY'
-from app import app, cleanup_stale_scans, db
+from app import app, cleanup_stale_scans
 
 with app.app_context():
-    db.create_all()
     cleanup_stale_scans()
 PY
 
