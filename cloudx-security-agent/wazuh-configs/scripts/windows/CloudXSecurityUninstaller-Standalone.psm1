@@ -68,9 +68,8 @@ function Remove-WazuhAgent {
 
     $productCodes = Get-WazuhProductCodes
     foreach ($productCode in $productCodes) {
-        $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" \
-            -ArgumentList @('/x', $productCode, '/qn', '/norestart') \
-            -Wait -PassThru -NoNewWindow
+        $msiArgs = @('/x', $productCode, '/qn', '/norestart')
+        $process = Start-Process -FilePath "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $msiArgs -Wait -PassThru -NoNewWindow
         if ($process.ExitCode -notin @(0, 1605, 1614, 3010)) {
             throw "Wazuh MSI uninstall failed with exit code $($process.ExitCode)."
         }
