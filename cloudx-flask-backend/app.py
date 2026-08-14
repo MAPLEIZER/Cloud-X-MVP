@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify, g
 import logging
 import uuid
-import threading
 import json
 import os
 from datetime import datetime, timezone
@@ -12,11 +11,16 @@ import psutil
 from ping3 import ping as ping_host
 from auth import clerk_authorized
 from deployer import AgentDeployer
-from scanners import network_scanners as scanners
+from scan_queue import (
+    ScanQueueUnavailable,
+    enqueue_lock,
+    enqueue_scan,
+    get_queue_job_status,
+    request_scan_stop,
+)
 from security_utils import (
     is_valid_host,
     is_valid_identifier,
-    is_valid_known_hosts_line,
     is_valid_scan_target,
     parse_csv,
     parse_origin_csv,
@@ -86,9 +90,6 @@ CORS(
     max_age=600,
 )
 
-active_scans = {}
-scan_state_lock = threading.Lock()
-
 
 class Scan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -98,10 +99,11 @@ class Scan(db.Model):
     tool = db.Column(db.String(50), nullable=False, default="nmap")
     target = db.Column(db.String(255), nullable=False)
     scan_type = db.Column(db.String(50), nullable=False)
-    status = db.Column(db.String(20), nullable=False, default="submitted")
+    status = db.Column(db.String(20), nullable=False, default="queued")
     progress = db.Column(db.Integer, default=0)
     results = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def __repr__(self):
         return f"<Scan {self.job_id}>"
@@ -123,93 +125,105 @@ def _json_body():
     return data
 
 
-def _set_active_process(job_id, process):
-    with scan_state_lock:
-        active_scans[job_id] = process
+def _scan_results(scan):
+    if not scan.results:
+        return None
+    try:
+        return json.loads(scan.results)
+    except json.JSONDecodeError:
+        logger.warning("Scan %s has invalid JSON results", scan.job_id)
+        return {"error": "Stored scan results are invalid."}
 
 
-def _remove_active_process(job_id):
-    with scan_state_lock:
-        active_scans.pop(job_id, None)
+def _scan_payload(scan):
+    return {
+        "job_id": scan.job_id,
+        "tool": scan.tool,
+        "target": scan.target,
+        "scan_type": scan.scan_type,
+        "status": scan.status,
+        "progress": scan.progress,
+        "results": _scan_results(scan),
+        "created_at": scan.created_at.isoformat(),
+        "updated_at": scan.updated_at.isoformat() if scan.updated_at else None,
+    }
 
 
-def _terminate_scan_process(job_id):
-    with scan_state_lock:
-        proc = active_scans.get(job_id)
+def _mark_scan_terminal(scan, status, error, code):
+    scan.status = status
+    scan.results = json.dumps({"error": error, "code": code})
+    scan.updated_at = datetime.utcnow()
+    db.session.commit()
 
-    if proc is None:
-        return False
+
+def reconcile_scan_queue_state(scan):
+    """Reconcile an active DB row with durable RQ state after API restarts."""
+
+    if scan.status not in {"submitted", "queued", "running", "stopping"}:
+        return scan
 
     try:
-        proc.terminate()
-        proc.wait(timeout=5)
-    except Exception:
-        logger.exception("Failed to terminate scan process %s", job_id)
-        try:
-            proc.kill()
-        except Exception:
-            logger.exception("Failed to kill scan process %s", job_id)
-        raise
-    finally:
-        _remove_active_process(job_id)
+        queue_status = get_queue_job_status(scan.job_id)
+    except ScanQueueUnavailable:
+        # PostgreSQL remains the source of API-visible state while Redis is
+        # temporarily unreachable. Health/observability work can surface Redis
+        # availability separately without corrupting scan state here.
+        return scan
 
-    return True
+    if queue_status is None:
+        _mark_scan_terminal(
+            scan,
+            "failed",
+            "Queue metadata for this active scan is missing.",
+            "queue_job_missing",
+        )
+        return scan
 
+    if queue_status in {"canceled", "stopped"}:
+        _mark_scan_terminal(
+            scan,
+            "stopped",
+            "Scan was stopped before completion.",
+            "scan_stopped",
+        )
+        return scan
 
-def run_scan_in_background(app_instance, job_id, tool, target, scan_type, port=None):
-    with app_instance.app_context():
-        try:
-            scan_generator = scanners.run_scan(tool, target, scan_type, port=port)
+    if queue_status == "failed":
+        _mark_scan_terminal(
+            scan,
+            "failed",
+            "The queued scan job failed.",
+            "queue_job_failed",
+        )
+        return scan
 
-            process_update = next(scan_generator)
-            if process_update["type"] == "process":
-                _set_active_process(job_id, process_update["value"])
-            else:
-                raise RuntimeError("Scanner did not yield process object first")
+    if queue_status == "finished" and scan.status not in {"completed", "failed", "stopped"}:
+        _mark_scan_terminal(
+            scan,
+            "failed",
+            "Queue job finished without a matching terminal database state.",
+            "queue_state_mismatch",
+        )
+        return scan
 
-            scan = Scan.query.filter_by(job_id=job_id).first()
-            if scan:
-                scan.status = "running"
-                db.session.commit()
+    if queue_status == "started" and scan.status != "stopping":
+        scan.status = "running"
+        scan.updated_at = datetime.utcnow()
+        db.session.commit()
+        return scan
 
-            for update in scan_generator:
-                scan = Scan.query.filter_by(job_id=job_id).first()
-                if not scan:
-                    logger.warning("Scan %s was deleted while running", job_id)
-                    return
+    if queue_status in {
+        "queued",
+        "deferred",
+        "scheduled",
+        "ready_to_enqueue",
+        "rate_limited",
+    } and scan.status not in {"queued", "stopping"}:
+        scan.status = "queued"
+        scan.updated_at = datetime.utcnow()
+        db.session.commit()
 
-                if update["type"] == "progress":
-                    scan.progress = update["value"]
-                    db.session.commit()
-                elif update["type"] == "result":
-                    scan.results = json.dumps(update["value"])
-                    scan.status = "completed"
-                    scan.progress = 100
-                    db.session.commit()
-                    break
-                elif update["type"] == "error":
-                    scan.status = "failed"
-                    scan.results = json.dumps({"error": update["value"]})
-                    db.session.commit()
-                    break
-
-        except StopIteration:
-            logger.exception("Scanner terminated before yielding a process for %s", job_id)
-            scan = Scan.query.filter_by(job_id=job_id).first()
-            if scan:
-                scan.status = "failed"
-                scan.results = json.dumps({"error": "Scanner failed to start."})
-                db.session.commit()
-        except Exception:
-            logger.exception("Error in background scan %s", job_id)
-            scan = Scan.query.filter_by(job_id=job_id).first()
-            if scan:
-                scan.status = "failed"
-                scan.progress = 0
-                scan.results = json.dumps({"error": "The scan failed internally."})
-                db.session.commit()
-        finally:
-            _remove_active_process(job_id)
+    return scan
 
 
 @app.route("/api/health", methods=["GET"])
@@ -323,85 +337,107 @@ def start_scan():
         if port is None:
             return jsonify({"error": "A port is required for this scan type"}), 400
 
-    with scan_state_lock:
-        active_count = Scan.query.filter(
-            Scan.status.in_(["submitted", "running"])
-        ).count()
-        if active_count >= app.config["MAX_CONCURRENT_SCANS"]:
-            return jsonify({"error": "Maximum concurrent scans reached"}), 429
+    try:
+        with enqueue_lock():
+            active_count = Scan.query.filter(
+                Scan.status.in_(["submitted", "queued", "running", "stopping"])
+            ).count()
+            if active_count >= app.config["MAX_CONCURRENT_SCANS"]:
+                return jsonify({"error": "Maximum concurrent scans reached"}), 429
 
-        new_scan = Scan(
-            tool=tool,
-            target=target,
-            scan_type=scan_type,
-            status="submitted",
-        )
-        db.session.add(new_scan)
-        db.session.commit()
+            job_id = str(uuid.uuid4())
+            new_scan = Scan(
+                job_id=job_id,
+                tool=tool,
+                target=target,
+                scan_type=scan_type,
+                status="queued",
+                progress=0,
+            )
+            db.session.add(new_scan)
+            db.session.commit()
 
-        thread = threading.Thread(
-            target=run_scan_in_background,
-            args=(app, new_scan.job_id, tool, target, scan_type, port),
-            daemon=True,
-        )
-        thread.start()
+            try:
+                enqueue_scan(job_id, tool, target, scan_type, port)
+            except ScanQueueUnavailable:
+                db.session.delete(new_scan)
+                db.session.commit()
+                raise
+    except ScanQueueUnavailable:
+        logger.exception("Scan queue unavailable while user %s submitted a scan", g.user_id)
+        return jsonify({"error": "Scan queue is unavailable"}), 503
 
-    logger.info("User %s started scan %s", g.user_id, new_scan.job_id)
-    return jsonify({"job_id": new_scan.job_id, "status": "submitted"}), 202
+    logger.info("User %s queued scan %s", g.user_id, new_scan.job_id)
+    return jsonify({"job_id": new_scan.job_id, "status": "queued"}), 202
 
 
 @app.route("/api/scans", methods=["GET"])
 @clerk_authorized
 def get_scans():
     scans = Scan.query.order_by(Scan.created_at.desc()).limit(500).all()
-    return jsonify(
-        [
-            {
-                "job_id": scan.job_id,
-                "tool": scan.tool,
-                "target": scan.target,
-                "scan_type": scan.scan_type,
-                "status": scan.status,
-                "progress": scan.progress,
-                "results": json.loads(scan.results) if scan.results else None,
-                "created_at": scan.created_at.isoformat(),
-            }
-            for scan in scans
-        ]
-    )
+    return jsonify([_scan_payload(scan) for scan in scans])
 
 
 @app.route("/api/scans/<job_id>/stop", methods=["POST"])
 @clerk_authorized
 def stop_scan(job_id):
-    if not _terminate_scan_process(job_id):
-        return jsonify({"error": "Scan not found or already completed"}), 404
-
     scan = Scan.query.filter_by(job_id=job_id).first()
-    if scan:
-        scan.status = "stopped"
-        db.session.commit()
+    if not scan:
+        return jsonify({"error": "Scan not found"}), 404
+    if scan.status in {"completed", "failed", "stopped"}:
+        return jsonify({"error": "Scan is already in a terminal state"}), 409
 
-    logger.info("User %s stopped scan %s", g.user_id, job_id)
-    return jsonify({"message": "Scan stopped successfully"}), 200
+    try:
+        queue_status = request_scan_stop(job_id)
+    except ScanQueueUnavailable:
+        logger.exception("Scan queue unavailable while stopping %s", job_id)
+        return jsonify({"error": "Scan queue is unavailable"}), 503
+
+    if queue_status == "canceled":
+        _mark_scan_terminal(
+            scan,
+            "stopped",
+            "Scan was canceled before execution.",
+            "scan_canceled",
+        )
+        response_status = "stopped"
+    elif queue_status == "stopping":
+        scan.status = "stopping"
+        scan.updated_at = datetime.utcnow()
+        db.session.commit()
+        response_status = "stopping"
+    elif queue_status in {"stopped", "canceled"}:
+        _mark_scan_terminal(
+            scan,
+            "stopped",
+            "Scan was stopped before completion.",
+            "scan_stopped",
+        )
+        response_status = "stopped"
+    elif queue_status == "failed":
+        _mark_scan_terminal(
+            scan,
+            "failed",
+            "The queued scan job failed before it could be stopped.",
+            "queue_job_failed",
+        )
+        return jsonify({"error": "Scan job has already failed"}), 409
+    elif queue_status in {"finished", "missing"}:
+        reconcile_scan_queue_state(scan)
+        return jsonify({"error": "Scan is no longer running"}), 409
+    else:
+        response_status = scan.status
+
+    logger.info("User %s requested stop for scan %s", g.user_id, job_id)
+    return jsonify({"message": "Scan stop requested", "status": response_status}), 200
 
 
 @app.route("/api/scans/<job_id>", methods=["GET"])
 @clerk_authorized
 def get_scan_status(job_id):
     scan = Scan.query.filter_by(job_id=job_id).first_or_404()
-
-    response = {
-        "job_id": scan.job_id,
-        "tool": scan.tool,
-        "target": scan.target,
-        "scan_type": scan.scan_type,
-        "status": scan.status,
-        "progress": scan.progress,
-        "created_at": scan.created_at.isoformat(),
-        "results": json.loads(scan.results) if scan.results else None,
-    }
-    return jsonify(response)
+    reconcile_scan_queue_state(scan)
+    return jsonify(_scan_payload(scan))
 
 
 @app.route("/api/scans/<job_id>", methods=["DELETE"])
@@ -412,15 +448,16 @@ def delete_scan(job_id):
         return jsonify({"error": "Scan not found"}), 404
 
     try:
-        with scan_state_lock:
-            proc = active_scans.get(job_id)
-        if proc is not None:
-            _terminate_scan_process(job_id)
-
+        if scan.status not in {"completed", "failed", "stopped"}:
+            request_scan_stop(job_id)
         db.session.delete(scan)
         db.session.commit()
         logger.info("User %s deleted scan %s", g.user_id, job_id)
         return jsonify({"message": "Scan deleted successfully"}), 200
+    except ScanQueueUnavailable:
+        db.session.rollback()
+        logger.exception("Scan queue unavailable while deleting %s", job_id)
+        return jsonify({"error": "Scan queue is unavailable"}), 503
     except Exception:
         db.session.rollback()
         logger.exception("Failed to delete scan %s", job_id)
@@ -565,20 +602,20 @@ def deploy_node():
     )
 
 
-def cleanup_stale_scans():
-    stale_scans = Scan.query.filter(Scan.status.in_(["running", "submitted"])).all()
-    for scan in stale_scans:
-        scan.status = "failed"
-        scan.results = json.dumps(
-            {"error": "Scan was interrupted by a server restart."}
-        )
-    if stale_scans:
-        db.session.commit()
-        logger.info("Cleaned up %s stale scans", len(stale_scans))
+def reconcile_stale_scans():
+    """Reconcile durable active scans instead of failing them on API restart."""
+
+    active_scans = Scan.query.filter(
+        Scan.status.in_(["submitted", "queued", "running", "stopping"])
+    ).all()
+    for scan in active_scans:
+        reconcile_scan_queue_state(scan)
+    if active_scans:
+        logger.info("Reconciled %s active scan records against RQ", len(active_scans))
 
 
 if __name__ == "__main__":
     with app.app_context():
-        cleanup_stale_scans()
+        reconcile_stale_scans()
 
     app.run(host="0.0.0.0", debug=False, port=5001)
