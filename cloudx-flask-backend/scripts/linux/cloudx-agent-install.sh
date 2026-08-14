@@ -1,198 +1,112 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
+umask 027
 
-# =========================================================================================
-# Cloud-X Security Agent Installer (Linux)
-# =========================================================================================
-# Professional installer for Cloud-X Security Agent on Linux systems.
-# Features:
-# - Auto-detection of Debian/RHEL based systems
-# - Secure repository configuration
-# - Automatic agent configuration and registration
-# - Robust error handling and color-coded logging
-# =========================================================================================
-
-# --- Configuration ---
 MANAGER_IP="${1:-127.0.0.1}"
-AGENT_NAME="${2:-linux-agent-$(hostname)}"
+AGENT_NAME="${2:-linux-agent-$(hostname -s)}"
 GROUP="${3:-default}"
-WAZUH_VERSION="4.7.2-1"
+WAZUH_AGENT_VERSION="${WAZUH_AGENT_VERSION:-}"
 
-# --- Colors & Formatting ---
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-BOLD='\033[1m'
+log() { printf '[Cloud-X] %s\n' "$*"; }
+fail() { printf '[Cloud-X] ERROR: %s\n' "$*" >&2; exit 1; }
 
-# --- Helper Functions ---
-
-print_banner() {
-    clear
-    echo -e "${BLUE}                                                                                                    ${NC}"
-    echo -e "${BLUE}                                                                                                    ${NC}"
-    echo -e "${BLUE}                                               @@@@@                                                ${NC}"
-    echo -e "${BLUE}                                            @@@      @@                                             ${NC}"
-    echo -e "${BLUE}                                          @@             @@                                         ${NC}"
-    echo -e "${BLUE}                                     @@@@@@         @@@@@@@@@@@                                     ${NC}"
-    echo -e "${BLUE}                                    @@@           @@@         @@                                    ${NC}"
-    echo -e "${BLUE}                                   @@           @@@  @@@@@@@@@ @@                                   ${NC}"
-    echo -e "${BLUE}                                   @@ @       @@@  @@@       @ @@                                   ${NC}"
-    echo -e "${BLUE}                                   @@ @@    @@@  @@@         @ @@                                   ${NC}"
-    echo -e "${BLUE}                                    @@   @@    @@@            @@                                    ${NC}"
-    echo -e "${BLUE}                                     @@@@@@@@@@@       @@@@@@@                                      ${NC}"
-    echo -e "${BLUE}                                         @@@                                                        ${NC}"
-    echo -e "${BLUE}                                                                                                    ${NC}"
-    echo -e "${BLUE}                                    @@                     @@    @    @                             ${NC}"
-    echo -e "${BLUE}                               @    @@   @@             @  @     @@  @                              ${NC}"
-    echo -e "${BLUE}                             @@@@@@ @@ @@@@@@  @@  @@ @@@@@@       @@                               ${NC}"
-    echo -e "${BLUE}                            @@      @@ @@   @@ @   @@ @    @      @ @@                              ${NC}"
-    echo -e "${BLUE}                             @@@@@@ @@ @@@@@@  @@@@@@ @@@@@@@    @   @@                             ${NC}"
-    echo -e "${BLUE}                                                                                                    ${NC}"
-    echo -e "${BLUE}                                                                                                    ${NC}"
-    echo -e "${BLUE}                                                                                                    ${NC}"
-    echo ""
-    echo -e "\033[42;37m                       CLOUD-X SECURITY WAZUH AGENT ENTERPRISE SETUP                         ${NC}"
-    echo -e "\033[42;37m                              Version 3.1 - Enhanced Security                           ${NC}"
-    echo -e "\033[42;33m                                   $(date -u '+%Y-%m-%d %H:%M:%S UTC')                              ${NC}"
-    echo -e "\033[42;36m                                     by CLOUD-X SECURITY                                  ${NC}"
-    echo ""
-}
-
-log_info() {
-    echo -e "${GREEN}[INFO]${NC} $1"
-}
-
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        log_error "Please run as root or with sudo."
-        exit 1
-    fi
-}
-
-cleanup() {
-    if [ $? -ne 0 ]; then
-        echo ""
-        log_error "SETUP FAILED. See logs for details."
-        echo -e "${YELLOW}Troubleshooting:${NC}"
-        echo "1. Check internet connectivity."
-        echo "2. Ensure you have root privileges."
-        echo "3. Verify the Manager IP ($MANAGER_IP) is reachable."
-    fi
-}
-trap cleanup EXIT
-
-# --- Main Installation Logic ---
-
-print_banner
-check_root
-
-log_info "Starting installation..."
-log_info "Target Manager: ${BOLD}$MANAGER_IP${NC}"
-log_info "Agent Name:     ${BOLD}$AGENT_NAME${NC}"
-log_info "Group:          ${BOLD}$GROUP${NC}"
-echo ""
-
-# 1. Detect OS & Install Dependencies
-log_info "Detecting Operating System..."
-
-if [ -f /etc/os-release ]; then
-    . /etc/os-release
-    OS=$NAME
-    VER=$VERSION_ID
-    log_info "OS Detected: $OS $VER"
-else
-    log_error "Cannot detect OS. /etc/os-release not found."
-    exit 1
+if (( EUID != 0 )); then
+    fail "Run this installer as root."
 fi
 
-if [[ "$ID" == "debian" || "$ID_LIKE" == "debian" || "$ID" == "ubuntu" ]]; then
-    PKG_MGR="apt-get"
-    log_info "Using apt-get package manager."
-    
-    log_info "Installing prerequisites (curl, gnupg, lsb-release)..."
-    $PKG_MGR update -y -qq >/dev/null
-    $PKG_MGR install curl gnupg lsb-release -y -qq >/dev/null
-    
-    log_info "Adding Wazuh repository..."
-    curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | apt-key add - 2>/dev/null
-    echo "deb https://packages.wazuh.com/4.x/apt/ stable main" | tee /etc/apt/sources.list.d/wazuh.list >/dev/null
-    $PKG_MGR update -y -qq >/dev/null
+if [[ ! "$MANAGER_IP" =~ ^[A-Za-z0-9:][A-Za-z0-9.:-]{0,252}$ ]]; then
+    fail "Invalid Wazuh manager address."
+fi
+if [[ ! "$AGENT_NAME" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]]; then
+    fail "Invalid agent name."
+fi
+if [[ ! "$GROUP" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$ ]]; then
+    fail "Invalid agent group."
+fi
 
-    log_info "Installing Wazuh Agent..."
-    WAZUH_MANAGER="$MANAGER_IP" WAZUH_AGENT_NAME="$AGENT_NAME" WAZUH_AGENT_GROUP="$GROUP" $PKG_MGR install wazuh-agent -y -qq >/dev/null
+[[ -r /etc/os-release ]] || fail "/etc/os-release is unavailable."
+# shellcheck disable=SC1091
+. /etc/os-release
+ID_LIKE="${ID_LIKE:-}"
 
-elif [[ "$ID" == "rhel" || "$ID_LIKE" == "rhel" || "$ID" == "centos" || "$ID" == "fedora" ]]; then
-    PKG_MGR="yum"
-    log_info "Using yum/dnf package manager."
-    
-    log_info "Importing GPG key..."
+install_debian() {
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+    apt-get install -y -qq --no-install-recommends ca-certificates curl gnupg
+
+    local key_tmp
+    key_tmp="$(mktemp)"
+    trap 'rm -f "$key_tmp"' RETURN
+    curl --fail --silent --show-error --location \
+        https://packages.wazuh.com/key/GPG-KEY-WAZUH \
+        --output "$key_tmp"
+    gpg --batch --yes --dearmor --output /usr/share/keyrings/wazuh.gpg "$key_tmp"
+    chmod 0644 /usr/share/keyrings/wazuh.gpg
+
+    cat > /etc/apt/sources.list.d/wazuh.list <<'EOF'
+deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main
+EOF
+    apt-get update -qq
+
+    local package="wazuh-agent"
+    if [[ -n "$WAZUH_AGENT_VERSION" ]]; then
+        package="wazuh-agent=$WAZUH_AGENT_VERSION"
+    fi
+
+    WAZUH_MANAGER="$MANAGER_IP" \
+    WAZUH_REGISTRATION_SERVER="$MANAGER_IP" \
+    WAZUH_AGENT_NAME="$AGENT_NAME" \
+    WAZUH_AGENT_GROUP="$GROUP" \
+        apt-get install -y -qq "$package"
+}
+
+install_rhel() {
+    local pkg_mgr="yum"
+    command -v dnf >/dev/null 2>&1 && pkg_mgr="dnf"
+
+    "$pkg_mgr" install -y ca-certificates curl
     rpm --import https://packages.wazuh.com/key/GPG-KEY-WAZUH
-    
-    log_info "Adding Wazuh repository..."
-    cat > /etc/yum.repos.d/wazuh.repo << EOF
+
+    cat > /etc/yum.repos.d/wazuh.repo <<'EOF'
 [wazuh]
 gpgcheck=1
 gpgkey=https://packages.wazuh.com/key/GPG-KEY-WAZUH
 enabled=1
-name=EL-\$releasever - Wazuh
+name=Wazuh repository
 baseurl=https://packages.wazuh.com/4.x/yum/
-protect=1
+priority=1
 EOF
 
-    log_info "Installing Wazuh Agent..."
-    WAZUH_MANAGER="$MANAGER_IP" WAZUH_AGENT_NAME="$AGENT_NAME" WAZUH_AGENT_GROUP="$GROUP" $PKG_MGR install wazuh-agent -y -q >/dev/null
-else
-    log_error "Unsupported Operating System: $ID"
-    exit 1
-fi
+    local package="wazuh-agent"
+    if [[ -n "$WAZUH_AGENT_VERSION" ]]; then
+        package="wazuh-agent-$WAZUH_AGENT_VERSION"
+    fi
 
-# 2. Configure Agent
-log_info "Configuring Agent..."
-# Just in case the env vars didn't take or we need to enforce:
-sed -i "s/^<client>/<client><server><address>$MANAGER_IP<\/address><\/server>/" /var/ossec/etc/ossec.conf
-# Note: More robust XML parsing would be better, but sed is standard for simple replacement if structure implies
+    WAZUH_MANAGER="$MANAGER_IP" \
+    WAZUH_REGISTRATION_SERVER="$MANAGER_IP" \
+    WAZUH_AGENT_NAME="$AGENT_NAME" \
+    WAZUH_AGENT_GROUP="$GROUP" \
+        "$pkg_mgr" install -y "$package"
+}
 
-# 3. Post-Install Setup
-log_info "Running Post-Installation Setup..."
-SCRIPT_DIR="$(dirname "$0")"
+case " $ID $ID_LIKE " in
+    *" debian "*|*" ubuntu "*) install_debian ;;
+    *" rhel "*|*" centos "*|*" fedora "*|*|*" rocky "*|*" almalinux "*) install_rhel ;;
+    *) fail "Unsupported Linux distribution: ${ID:-unknown}" ;;
+esac
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 POST_INSTALL="$SCRIPT_DIR/cloudx-agent-setup.sh"
-
-if [ -f "$POST_INSTALL" ]; then
-    chmod +x "$POST_INSTALL"
+if [[ -f "$POST_INSTALL" ]]; then
+    chmod 0750 "$POST_INSTALL"
     "$POST_INSTALL"
 else
-    # Try to download if not found (matching Windows behavior logic where possible)
-    # But for now, just warn if missing as we are not sure of the hosted URL yet
-    log_warn "post-install-setup.sh not found in $SCRIPT_DIR. Skipping additional configuration."
+    fail "Required post-install script is missing."
 fi
 
-# 4. Enable & Start
-log_info "Enabling and Starting Service..."
 systemctl daemon-reload
-systemctl enable wazuh-agent >/dev/null 2>&1
+systemctl enable wazuh-agent >/dev/null
 systemctl restart wazuh-agent
+systemctl is-active --quiet wazuh-agent || fail "Wazuh agent failed to start."
 
-# 5. Verification
-if systemctl is-active --quiet wazuh-agent; then
-    echo ""
-    echo -e "${GREEN}   ================================================${NC}"
-    echo -e "${GREEN}             SETUP SUCCESSFUL                      ${NC}"
-    echo -e "${GREEN}   ================================================${NC}"
-    echo ""
-    log_info "Agent is running."
-    log_info "Logs available at: /var/ossec/logs/ossec.log"
-else
-    log_error "Service failed to start. Check logs."
-    exit 1
-fi
+log "Wazuh agent installed and running for manager $MANAGER_IP."
