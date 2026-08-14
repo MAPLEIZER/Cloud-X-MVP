@@ -1,0 +1,71 @@
+name: Branch Enforcement
+
+permissions:
+  contents: read
+  pull-requests: read
+
+on:
+  pull_request:
+    branches: [dev, staging, main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  push:
+    branches:
+      - '**'
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+jobs:
+  policy:
+    name: Branch Policy Enforcement
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout policy
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate policy
+        run: python3 scripts/ci/branch_policy.py validate
+      - name: Enforce pull request route
+        if: github.event_name == 'pull_request'
+        env:
+          HEAD_BRANCH: ${{ github.head_ref }}
+          BASE_BRANCH: ${{ github.base_ref }}
+          PR_ACTOR: ${{ github.event.pull_request.user.login }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          python3 scripts/ci/branch_policy.py check-pr \
+            --head "$HEAD_BRANCH" \
+            --base "$BASE_BRANCH" \
+            --actor "$PR_ACTOR" \
+            --head-repo "$HEAD_REPO" \
+            --repository "$REPOSITORY"
+      - name: Classify pushed branch
+        if: github.event_name == 'push'
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: python3 scripts/ci/branch_policy.py check "$BRANCH"
+      - name: Audit permanent branches
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          branches="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPOSITORY/branches?per_page=100" | jq -r '.[].name')"
+          for required in main staging dev feature/backend feature/frontend; do
+            grep -Fxq "$required" <<<"$branches" || {
+              echo "::error::Missing permanent branch: $required"
+              exit 1
+            }
+          done
+          while IFS= read -r branch; do
+            case "$branch" in
+              main|staging|dev|feature/backend|feature/frontend|dependabot/*) ;;
+              *)
+                echo "::warning::Legacy/nonconforming branch remains: $branch (cleanup is report-only; no automatic deletion)"
+                ;;
+            esac
+          done <<<"$branches"

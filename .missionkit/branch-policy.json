@@ -1,0 +1,44 @@
+{
+  "$schema": "./branch-policy.schema.json",
+  "version": 3,
+  "mode": "enforce",
+  "permanent_branches": [
+    "main",
+    "staging",
+    "dev",
+    "feature/backend",
+    "feature/frontend"
+  ],
+  "agent_lanes": {
+    "backend": "feature/backend",
+    "frontend": "feature/frontend"
+  },
+  "edges": {
+    "feature/backend->dev": {"kind": "integration", "merge_strategy": "squash", "owner_gated": true},
+    "feature/frontend->dev": {"kind": "integration", "merge_strategy": "squash", "owner_gated": true},
+    "dev->staging": {"kind": "promotion", "merge_strategy": "merge_commit", "owner_gated": true, "require_tree_equality_after_merge": true},
+    "staging->main": {"kind": "promotion", "merge_strategy": "merge_commit", "owner_gated": true, "require_tree_equality_after_merge": true},
+    "main->dev": {"kind": "reconciliation", "merge_strategy": "reconcile", "owner_gated": true}
+  },
+  "bounded_prefixes": {
+    "promote/": {"enabled": false, "future_role": "branch-manager", "max_age_hours": 72, "requires_open_pr": true},
+    "salvage/": {"enabled": false, "future_role": "branch-manager", "max_age_hours": 168, "requires_open_pr": false},
+    "dependabot/": {"enabled": true, "mode": "enforce", "max_age_hours": 336, "requires_open_pr": true, "pr_base": "dev", "required_actor": "dependabot[bot]", "never_auto_merge": true},
+    "security-autofix/": {"enabled": false, "future_role": "verified-security-bot", "max_age_hours": 168, "requires_open_pr": true, "pr_base": "dev", "require_draft_pr": true, "never_auto_merge": true}
+  },
+  "enforcement": {
+    "pr_routing": true,
+    "push_classification": true,
+    "scheduled_audit": true,
+    "destructive_recovery": false,
+    "legacy_branch_cleanup": "report-only"
+  },
+  "automation": {
+    "owner_gated_merges": true,
+    "auto_merge": false,
+    "delete_branch_on_merge": false,
+    "branch_manager_enabled": false,
+    "lane_sync_enabled": false,
+    "audit_apply_enabled": false
+  }
+}

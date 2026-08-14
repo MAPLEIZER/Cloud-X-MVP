@@ -1,0 +1,41 @@
+name: Branch Policy
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
+  pull_request:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-policy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Validate machine policy
+        run: python3 scripts/ci/branch_policy.py validate
+      - name: Run governance tests
+        run: python3 -m unittest discover -s tests -p 'test_branch_policy.py'
+      - name: Classify current ref (report only)
+        env:
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: python3 scripts/ci/branch_policy.py classify "$BRANCH_NAME"

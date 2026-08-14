@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+branch=$(git branch --show-current)
+
+if [ -z "$branch" ]; then
+  printf 'pre-push: detached HEAD is not a managed push source.\n' >&2
+  exit 2
+fi
+
+python3 "$repo_root/scripts/ci/branch_policy.py" check "$branch" >/dev/null || {
+  printf 'pre-push: branch %s violates Cloud-X branch policy.\n' "$branch" >&2
+  exit 2
+}
+
+case "$branch" in
+  feature/backend|feature/frontend) ;;
+  *)
+    if [ "${BRANCH_MANAGER_PUSH:-0}" != "1" ]; then
+      printf 'pre-push: %s is manager/owner-controlled. Set BRANCH_MANAGER_PUSH=1 only for an intentional managed push.\n' "$branch" >&2
+      exit 2
+    fi
+    ;;
+esac
