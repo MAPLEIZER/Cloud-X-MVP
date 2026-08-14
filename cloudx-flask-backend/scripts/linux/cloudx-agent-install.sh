@@ -36,11 +36,11 @@ install_debian() {
 
     local key_tmp
     key_tmp="$(mktemp)"
-    trap 'rm -f "$key_tmp"' RETURN
     curl --fail --silent --show-error --location \
         https://packages.wazuh.com/key/GPG-KEY-WAZUH \
         --output "$key_tmp"
     gpg --batch --yes --dearmor --output /usr/share/keyrings/wazuh.gpg "$key_tmp"
+    rm -f "$key_tmp"
     chmod 0644 /usr/share/keyrings/wazuh.gpg
 
     cat > /etc/apt/sources.list.d/wazuh.list <<'EOF'
@@ -91,7 +91,7 @@ EOF
 
 case " $ID $ID_LIKE " in
     *" debian "*|*" ubuntu "*) install_debian ;;
-    *" rhel "*|*" centos "*|*" fedora "*|*|*" rocky "*|*" almalinux "*) install_rhel ;;
+    *" rhel "*|*" centos "*|*" fedora "*|*" rocky "*|*" almalinux "*) install_rhel ;;
     *) fail "Unsupported Linux distribution: ${ID:-unknown}" ;;
 esac
 
