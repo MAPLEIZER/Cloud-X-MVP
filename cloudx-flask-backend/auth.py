@@ -23,7 +23,7 @@ def clerk_authorized(view):
                 ),
             )
         except Exception:
-            logger.exception("Clerk request authentication failed")
+            logger.warning("Clerk request authentication failed")
             return jsonify({"error": "Authentication failed"}), 401
 
         if not state.is_signed_in:
