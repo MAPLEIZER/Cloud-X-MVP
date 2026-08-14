@@ -1,0 +1,10 @@
+# Security-sensitive ownership
+* @MAPLEIZER
+
+/cloudx-flask-backend/ @MAPLEIZER
+/cloudx-security-agent/ @MAPLEIZER
+/.github/workflows/ @MAPLEIZER
+/SECURITY.md @MAPLEIZER
+/docs/ARCHITECTURE.md @MAPLEIZER
+/packaging/ @MAPLEIZER
+/integrations/ @MAPLEIZER
