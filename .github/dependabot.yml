@@ -2,6 +2,7 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -25,6 +26,7 @@ updates:
 
   - package-ecosystem: "npm"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "monday"
@@ -56,6 +58,7 @@ updates:
 
   - package-ecosystem: "pip"
     directory: "/cloudx-flask-backend"
+    target-branch: "dev"
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -88,6 +91,7 @@ updates:
 
   - package-ecosystem: "docker"
     directory: "/"
+    target-branch: "dev"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3
@@ -101,6 +105,7 @@ updates:
 
   - package-ecosystem: "docker"
     directory: "/cloudx-flask-backend"
+    target-branch: "dev"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 3
