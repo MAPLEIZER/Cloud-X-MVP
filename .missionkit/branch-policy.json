@@ -1,6 +1,6 @@
 {
   "$schema": "./branch-policy.schema.json",
-  "version": 3,
+  "version": 4,
   "mode": "enforce",
   "permanent_branches": [
     "main",
@@ -31,7 +31,8 @@
     "push_classification": true,
     "scheduled_audit": true,
     "destructive_recovery": false,
-    "legacy_branch_cleanup": "report-only"
+    "legacy_branch_cleanup": "archive-tag-then-delete",
+    "branch_purge_marker": "[branch-purge]"
   },
   "automation": {
     "owner_gated_merges": true,
