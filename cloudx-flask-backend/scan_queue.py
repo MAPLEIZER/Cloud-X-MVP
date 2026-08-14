@@ -1,8 +1,9 @@
 import os
+from contextlib import contextmanager
 from functools import lru_cache
 
 from redis import Redis
-from redis.exceptions import RedisError
+from redis.exceptions import LockError, RedisError
 from rq import Queue
 from rq.serializers import JSONSerializer
 
@@ -51,12 +52,20 @@ def assert_queue_available():
         raise ScanQueueUnavailable("Redis is unavailable") from exc
 
 
+@contextmanager
 def enqueue_lock(timeout=10, blocking_timeout=5):
-    return get_redis_connection().lock(
-        _ENQUEUE_LOCK_KEY,
-        timeout=timeout,
-        blocking_timeout=blocking_timeout,
-    )
+    """Serialize capacity checks across multiple API processes/instances."""
+
+    try:
+        lock = get_redis_connection().lock(
+            _ENQUEUE_LOCK_KEY,
+            timeout=timeout,
+            blocking_timeout=blocking_timeout,
+        )
+        with lock:
+            yield
+    except (RedisError, LockError) as exc:
+        raise ScanQueueUnavailable("Unable to acquire scan enqueue lock") from exc
 
 
 def enqueue_scan(job_id, tool, target, scan_type, port=None):
