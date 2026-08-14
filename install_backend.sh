@@ -32,7 +32,7 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 is required for identity generation." >&2
+  echo "python3 is required." >&2
   exit 1
 fi
 
@@ -50,6 +50,11 @@ require_env CLERK_SECRET_KEY
 require_env CLERK_AUTHORIZED_PARTIES
 require_env CLERK_ALLOWED_USER_IDS
 
+# Remote deployment is separately fail-closed. An empty JSON object means the
+# API can run but no host is authorized for remote agent deployment.
+DEPLOYMENT_TARGET_ALLOWLIST_JSON="${DEPLOYMENT_TARGET_ALLOWLIST_JSON:-{}}"
+ENABLE_WINDOWS_AGENT_DEPLOYMENT="${ENABLE_WINDOWS_AGENT_DEPLOYMENT:-false}"
+
 prompt DATA_DIR "/opt/cloudx-backend" "Where should data/config live"
 prompt IMAGE "cloudx-backend:latest" "Docker image to run"
 prompt HOST_PORT "5001" "Host port to expose the API on"
@@ -64,6 +69,74 @@ if [[ "$NODE_ROLE" != "primary" && "$NODE_ROLE" != "worker" ]]; then
   echo "NODE_ROLE must be primary or worker." >&2
   exit 1
 fi
+if ! [[ "$ENABLE_WINDOWS_AGENT_DEPLOYMENT" =~ ^(true|false|1|0|yes|no|on|off)$ ]]; then
+  echo "ENABLE_WINDOWS_AGENT_DEPLOYMENT must be a boolean value." >&2
+  exit 1
+fi
+
+# Validate the deployment allow-list before writing configuration. The backend
+# performs the same validation again on startup.
+python3 - "$DEPLOYMENT_TARGET_ALLOWLIST_JSON" <<'PY'
+import ipaddress
+import json
+import re
+import sys
+
+principal_re = re.compile(r"^(?:user|org):[A-Za-z0-9_-]{1,128}$")
+host_label_re = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+try:
+    value = json.loads(sys.argv[1])
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"Invalid DEPLOYMENT_TARGET_ALLOWLIST_JSON: {exc}")
+if not isinstance(value, dict):
+    raise SystemExit("DEPLOYMENT_TARGET_ALLOWLIST_JSON must be a JSON object")
+
+for principal, entries in value.items():
+    if not isinstance(principal, str) or not principal_re.fullmatch(principal):
+        raise SystemExit(f"Invalid deployment principal: {principal!r}")
+    if not isinstance(entries, list):
+        raise SystemExit(f"Targets for {principal!r} must be a list")
+    for entry in entries:
+        if not isinstance(entry, str) or not entry or entry != entry.strip():
+            raise SystemExit(f"Invalid deployment target: {entry!r}")
+        try:
+            if "/" in entry:
+                ipaddress.ip_network(entry, strict=False)
+            else:
+                ipaddress.ip_address(entry)
+        except ValueError:
+            host = entry[:-1] if entry.endswith(".") else entry
+            labels = host.split(".")
+            if not host or len(host) > 253 or not all(host_label_re.fullmatch(label) for label in labels):
+                raise SystemExit(f"Invalid deployment target: {entry!r}")
+PY
+
+POSTGRES_DB="${POSTGRES_DB:-cloudx}"
+POSTGRES_USER="${POSTGRES_USER:-cloudx}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')}"
+
+if ! [[ "$POSTGRES_DB" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "POSTGRES_DB may contain only letters, digits, and underscores." >&2
+  exit 1
+fi
+if ! [[ "$POSTGRES_USER" =~ ^[A-Za-z0-9_]+$ ]]; then
+  echo "POSTGRES_USER may contain only letters, digits, and underscores." >&2
+  exit 1
+fi
+
+DATABASE_URL="$(python3 - "$POSTGRES_USER" "$POSTGRES_PASSWORD" "$POSTGRES_DB" <<'PY'
+import sys
+from urllib.parse import quote
+
+user, password, database = sys.argv[1:4]
+print(
+    "postgresql+psycopg://"
+    f"{quote(user, safe='')}:{quote(password, safe='')}@postgres:5432/"
+    f"{quote(database, safe='')}"
+)
+PY
+)"
 
 HOSTNAME_RESOLVED="$(hostname -f 2>/dev/null || hostname -s 2>/dev/null || echo "127.0.0.1")"
 PRIMARY_DEFAULT="http://${HOSTNAME_RESOLVED:-127.0.0.1}:5001"
@@ -87,46 +160,21 @@ else
   docker pull "$IMAGE"
 fi
 
-touch scans.db
-chmod 0600 scans.db
-
-python3 - <<'PY'
-import datetime
-import json
-import os
-import uuid
-from datetime import timezone
-
-path = "server_identity.json"
-data = None
-if os.path.exists(path):
-    try:
-        with open(path, encoding="utf-8") as handle:
-            data = json.load(handle)
-    except (OSError, json.JSONDecodeError):
-        data = None
-
-if not data or "server_id" not in data:
-    data = {
-        "server_id": str(uuid.uuid4()),
-        "created_at": datetime.datetime.now(timezone.utc).isoformat(),
-    }
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(data, handle)
-
-os.chmod(path, 0o600)
-PY
-
 cat > .env <<EOF
 FLASK_ENV=production
 PORT=5001
-DATABASE_PATH=/app/scans.db
 PRIMARY_NODE_URL=$PRIMARY_NODE_URL
 NODE_ROLE=$NODE_ROLE
 NODE_ID=$NODE_ID
 CLERK_SECRET_KEY=$CLERK_SECRET_KEY
 CLERK_AUTHORIZED_PARTIES=$CLERK_AUTHORIZED_PARTIES
 CLERK_ALLOWED_USER_IDS=$CLERK_ALLOWED_USER_IDS
+DEPLOYMENT_TARGET_ALLOWLIST_JSON=$DEPLOYMENT_TARGET_ALLOWLIST_JSON
+ENABLE_WINDOWS_AGENT_DEPLOYMENT=$ENABLE_WINDOWS_AGENT_DEPLOYMENT
+POSTGRES_DB=$POSTGRES_DB
+POSTGRES_USER=$POSTGRES_USER
+POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+DATABASE_URL=$DATABASE_URL
 MAX_CONCURRENT_SCANS=${MAX_CONCURRENT_SCANS:-4}
 GUNICORN_THREADS=${GUNICORN_THREADS:-8}
 GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
@@ -140,6 +188,22 @@ fi
 
 cat > docker-compose.yml <<EOF
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: cloudx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: \${POSTGRES_DB}
+      POSTGRES_USER: \${POSTGRES_USER}
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+    volumes:
+      - cloudx_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \$\${POSTGRES_USER} -d \$\${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   backend:
     image: $IMAGE
     container_name: cloudx-backend
@@ -148,16 +212,34 @@ services:
       - "$HOST_PORT:5001"
     env_file:
       - .env
+    environment:
+      IDENTITY_FILE: /data/server_identity.json
     volumes:
-      - "${DATA_DIR}/scans.db:/app/scans.db"
-      - "${DATA_DIR}/server_identity.json:/app/server_identity.json"
+      - cloudx_data:/data
     cap_drop:
       - ALL
 $CAP_RAW_BLOCK
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  cloudx_data:
+  cloudx_postgres_data:
 EOF
 chmod 0600 docker-compose.yml
 
 $COMPOSE_BIN up -d
-echo "Deployment finished. Check health: curl -fsSL http://localhost:$HOST_PORT/api/health"
+echo "Deployment finished. PostgreSQL credentials are stored in $DATA_DIR/.env (mode 0600)."
+if [[ "$DEPLOYMENT_TARGET_ALLOWLIST_JSON" == "{}" ]]; then
+  echo "Remote agent deployment is fail-closed: no deployment targets are currently authorized."
+fi
+echo "Check health: curl -fsSL http://localhost:$HOST_PORT/api/health"

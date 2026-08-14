@@ -72,9 +72,22 @@ class AgentDeployer:
                 "error": "Required deployment file is missing on the server.",
             }
 
+        # User-controlled values are never embedded directly into the PowerShell
+        # program. Encode them as data, decode into variables on the remote host,
+        # and pass those variables through PowerShell parameter binding.
+        encoded_parameters = {
+            "manager_ip": base64.b64encode(manager_ip.encode("utf-8")).decode("ascii"),
+            "agent_name": base64.b64encode(agent_name.encode("utf-8")).decode("ascii"),
+            "group": base64.b64encode(group.encode("utf-8")).decode("ascii"),
+        }
+
         ps_script = f"""
         $ErrorActionPreference = "Stop"
         Set-StrictMode -Version Latest
+
+        $managerIP = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("{encoded_parameters['manager_ip']}"))
+        $agentName = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("{encoded_parameters['agent_name']}"))
+        $agentGroup = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("{encoded_parameters['group']}"))
 
         $deployDir = Join-Path $env:TEMP ("cloudx-deploy-" + [Guid]::NewGuid().ToString("N"))
         New-Item -ItemType Directory -Path $deployDir -Force | Out-Null
@@ -89,8 +102,8 @@ class AgentDeployer:
             [IO.File]::WriteAllBytes($threatPath, [Convert]::FromBase64String("{bundle['threat']}"))
 
             Import-Module $modulePath -Force
-            Install-CloudXAgent -ManagerIP "{manager_ip}" -AgentName "{agent_name}" -AgentGroup "{group}" | Out-Null
-            & $setupPath -WazuhManager "{manager_ip}" -AgentName "{agent_name}"
+            Install-CloudXAgent -ManagerIP $managerIP -AgentName $agentName -AgentGroup $agentGroup | Out-Null
+            & $setupPath -WazuhManager $managerIP -AgentName $agentName
         }}
         finally {{
             Remove-Item -LiteralPath $deployDir -Recurse -Force -ErrorAction SilentlyContinue

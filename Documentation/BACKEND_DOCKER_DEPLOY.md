@@ -6,37 +6,54 @@ This document describes the current local/container validation path. Release-ima
 
 ## Current CI rule
 
-The normal `.github/workflows/docker-build.yml` workflow is the container gate. It builds both the frontend and backend and runs the backend security regression suite.
+The normal `.github/workflows/docker-build.yml` workflow is the container gate. It builds both frontend and backend images, verifies the backend runs unprivileged, smoke-tests Nmap as that runtime user, applies the database migrations to a clean PostgreSQL instance, and runs the backend regression suite.
 
-There is intentionally **no** `Build and Push Backend Image` or `Build and Push Frontend Image` workflow during this phase. A successful build proves that the images can be constructed; it does not publish mutable `latest` images as a side effect of merging code.
+There is intentionally **no** always-on image publishing workflow during this phase. A successful build proves that the images can be constructed and validated; it does not publish mutable `latest` images as a side effect of merging code.
 
-## Backend
+## Backend stack
 
-The backend container is defined by `cloudx-flask-backend/Dockerfile` and currently uses Python 3.14 slim. The repository compose file builds the image locally and names it `cloudx-backend:latest`.
+The backend container is defined by `cloudx-flask-backend/Dockerfile`. The validation stack in `cloudx-flask-backend/docker-compose.yml` contains:
+
+- PostgreSQL 17 with a persistent named volume;
+- the Cloud-X backend image running as UID/GID 10001;
+- a separate `/data` volume for node identity/runtime state;
+- `cap_drop: ALL`, with only `NET_RAW` restored for scanning;
+- `no-new-privileges`;
+- PostgreSQL and backend health checks.
 
 From the repository root:
 
 ```bash
 cd cloudx-flask-backend
 cp .env.example .env
-# Fill in the required Clerk/authentication settings before starting.
+# Replace Clerk and PostgreSQL placeholders before starting.
 docker compose build
 docker compose up -d
 docker compose ps
 curl -fsS http://127.0.0.1:5001/api/health
 ```
 
-The compose configuration drops all Linux capabilities and adds back only `NET_RAW` for the scanner functionality. It also applies `no-new-privileges` and stores runtime state in the `cloudx_data` volume.
+The backend requires `DATABASE_URL`. Container startup runs `alembic upgrade head` before Gunicorn starts, so a new PostgreSQL database receives the versioned schema automatically. Production startup no longer uses `db.create_all()` and does not use a SQLite `scans.db` file.
+
+To inspect migrations manually:
+
+```bash
+docker compose run --rm backend alembic current
+docker compose run --rm backend alembic history
+docker compose run --rm backend alembic upgrade head
+```
 
 ### Standalone installer
 
-`install_backend.sh` remains an experimental bootstrap utility. It accepts a locally available image or an explicitly supplied image tarball. Treat the script as a validation tool, not a production installer/release mechanism.
+`install_backend.sh` remains an experimental bootstrap utility. It now generates or accepts PostgreSQL credentials, writes them to a mode-`0600` `.env`, starts PostgreSQL with a named volume, and starts the backend only after the database is healthy. It no longer creates or bind-mounts `scans.db`.
 
-A future supported appliance installer must consume an immutable, versioned and verifiable Cloud-X release rather than a mutable `latest` registry tag.
+It accepts a locally available image or an explicitly supplied image tarball. Treat the script as a validation tool, not a production installer/release mechanism.
+
+A future supported appliance installer must consume an immutable, versioned and verifiable Cloud-X release rather than a mutable `latest` registry tag, and should source credentials from an appropriate secret manager.
 
 ## Frontend
 
-The validation compose file at `deploy/frontend/docker-compose.yml` now builds the frontend locally from `Dockerfile.frontend` instead of pulling an unpublished GHCR image.
+The validation compose file at `deploy/frontend/docker-compose.yml` builds the frontend locally from `Dockerfile.frontend` instead of pulling an unpublished GHCR image.
 
 From the repository root:
 
