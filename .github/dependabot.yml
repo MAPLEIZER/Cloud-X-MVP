@@ -51,6 +51,12 @@ updates:
         applies-to: "security-updates"
         patterns:
           - "*"
+    # Routine major upgrades are intentionally handled as planned migrations.
+    # This affects version updates only; Dependabot security updates remain eligible.
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
 
   - package-ecosystem: "pip"
     directory: "/cloudx-flask-backend"
