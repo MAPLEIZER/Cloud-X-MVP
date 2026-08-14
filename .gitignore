@@ -5,16 +5,16 @@ node_modules/
 dist/
 build/
 
-# Environment files
+# Environment files (examples remain tracked)
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!**/.env.example
 
 # Virtual environments
 venv/
 .venv/
 env/
-.env/
 
 # IDE
 .idea/
@@ -26,9 +26,10 @@ env/
 .DS_Store
 Thumbs.db
 
-# Logs
+# Logs and runtime state
 logs/
 *.log
+*.pid
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
@@ -36,6 +37,9 @@ yarn-error.log*
 
 # Testing
 coverage/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # TanStack temp files
 .tanstack/
@@ -47,13 +51,20 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Database
+# Local databases / state
 *.db
+*.db-*
+*.sqlite
 *.sqlite3
 
-# Certificates (keep public, ignore private)
+# Private key / certificate containers. Public certificates may be tracked when
+# intentionally required, but never private-key-bearing formats.
 *.pfx
+*.p12
 *.key
+*.pem
+id_rsa
+id_ed25519
 
 # Local config
 *.local
