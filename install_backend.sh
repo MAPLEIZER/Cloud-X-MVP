@@ -50,6 +50,11 @@ require_env CLERK_SECRET_KEY
 require_env CLERK_AUTHORIZED_PARTIES
 require_env CLERK_ALLOWED_USER_IDS
 
+# Remote deployment is separately fail-closed. An empty JSON object means the
+# API can run but no host is authorized for remote agent deployment.
+DEPLOYMENT_TARGET_ALLOWLIST_JSON="${DEPLOYMENT_TARGET_ALLOWLIST_JSON:-{}}"
+ENABLE_WINDOWS_AGENT_DEPLOYMENT="${ENABLE_WINDOWS_AGENT_DEPLOYMENT:-false}"
+
 prompt DATA_DIR "/opt/cloudx-backend" "Where should data/config live"
 prompt IMAGE "cloudx-backend:latest" "Docker image to run"
 prompt HOST_PORT "5001" "Host port to expose the API on"
@@ -64,6 +69,48 @@ if [[ "$NODE_ROLE" != "primary" && "$NODE_ROLE" != "worker" ]]; then
   echo "NODE_ROLE must be primary or worker." >&2
   exit 1
 fi
+if ! [[ "$ENABLE_WINDOWS_AGENT_DEPLOYMENT" =~ ^(true|false|1|0|yes|no|on|off)$ ]]; then
+  echo "ENABLE_WINDOWS_AGENT_DEPLOYMENT must be a boolean value." >&2
+  exit 1
+fi
+
+# Validate the deployment allow-list before writing configuration. The backend
+# performs the same validation again on startup.
+python3 - "$DEPLOYMENT_TARGET_ALLOWLIST_JSON" <<'PY'
+import ipaddress
+import json
+import re
+import sys
+
+principal_re = re.compile(r"^(?:user|org):[A-Za-z0-9_-]{1,128}$")
+host_label_re = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+try:
+    value = json.loads(sys.argv[1])
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"Invalid DEPLOYMENT_TARGET_ALLOWLIST_JSON: {exc}")
+if not isinstance(value, dict):
+    raise SystemExit("DEPLOYMENT_TARGET_ALLOWLIST_JSON must be a JSON object")
+
+for principal, entries in value.items():
+    if not isinstance(principal, str) or not principal_re.fullmatch(principal):
+        raise SystemExit(f"Invalid deployment principal: {principal!r}")
+    if not isinstance(entries, list):
+        raise SystemExit(f"Targets for {principal!r} must be a list")
+    for entry in entries:
+        if not isinstance(entry, str) or not entry or entry != entry.strip():
+            raise SystemExit(f"Invalid deployment target: {entry!r}")
+        try:
+            if "/" in entry:
+                ipaddress.ip_network(entry, strict=False)
+            else:
+                ipaddress.ip_address(entry)
+        except ValueError:
+            host = entry[:-1] if entry.endswith(".") else entry
+            labels = host.split(".")
+            if not host or len(host) > 253 or not all(host_label_re.fullmatch(label) for label in labels):
+                raise SystemExit(f"Invalid deployment target: {entry!r}")
+PY
 
 POSTGRES_DB="${POSTGRES_DB:-cloudx}"
 POSTGRES_USER="${POSTGRES_USER:-cloudx}"
@@ -122,6 +169,8 @@ NODE_ID=$NODE_ID
 CLERK_SECRET_KEY=$CLERK_SECRET_KEY
 CLERK_AUTHORIZED_PARTIES=$CLERK_AUTHORIZED_PARTIES
 CLERK_ALLOWED_USER_IDS=$CLERK_ALLOWED_USER_IDS
+DEPLOYMENT_TARGET_ALLOWLIST_JSON=$DEPLOYMENT_TARGET_ALLOWLIST_JSON
+ENABLE_WINDOWS_AGENT_DEPLOYMENT=$ENABLE_WINDOWS_AGENT_DEPLOYMENT
 POSTGRES_DB=$POSTGRES_DB
 POSTGRES_USER=$POSTGRES_USER
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
@@ -190,4 +239,7 @@ chmod 0600 docker-compose.yml
 
 $COMPOSE_BIN up -d
 echo "Deployment finished. PostgreSQL credentials are stored in $DATA_DIR/.env (mode 0600)."
+if [[ "$DEPLOYMENT_TARGET_ALLOWLIST_JSON" == "{}" ]]; then
+  echo "Remote agent deployment is fail-closed: no deployment targets are currently authorized."
+fi
 echo "Check health: curl -fsSL http://localhost:$HOST_PORT/api/health"
