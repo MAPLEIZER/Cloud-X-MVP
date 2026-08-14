@@ -83,5 +83,48 @@ jobs:
         run: |
           docker run --rm --entrypoint nmap backend:latest \
             -T4 -F -v -oX - 127.0.0.1 >/dev/null
+      - name: Verify Alembic migrations on clean PostgreSQL
+        run: |
+          set -euo pipefail
+          network="cloudx-ci-${GITHUB_RUN_ID}"
+          postgres="cloudx-postgres-${GITHUB_RUN_ID}"
+          cleanup() {
+            docker rm -f "$postgres" >/dev/null 2>&1 || true
+            docker network rm "$network" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker network create "$network" >/dev/null
+          docker run -d --name "$postgres" --network "$network" \
+            -e POSTGRES_DB=cloudx \
+            -e POSTGRES_USER=cloudx \
+            -e POSTGRES_PASSWORD=cloudx-ci-password \
+            postgres:17-alpine >/dev/null
+
+          ready=0
+          for _ in $(seq 1 30); do
+            if docker exec "$postgres" pg_isready -U cloudx -d cloudx >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          migration_env=(
+            -e "DATABASE_URL=postgresql+psycopg://cloudx:cloudx-ci-password@${postgres}:5432/cloudx"
+            -e "CLERK_SECRET_KEY=sk_test_ci_only"
+            -e "CLERK_AUTHORIZED_PARTIES=http://localhost:5173"
+            -e "CLERK_ALLOWED_USER_IDS=user_ci"
+          )
+
+          docker run --rm --network "$network" "${migration_env[@]}" \
+            --entrypoint alembic backend:latest upgrade head
+          # A second upgrade must be a no-op rather than failing.
+          docker run --rm --network "$network" "${migration_env[@]}" \
+            --entrypoint alembic backend:latest upgrade head
+
+          test "$(docker exec "$postgres" psql -U cloudx -d cloudx -tAc "SELECT to_regclass('public.scan')")" = "scan"
+          test "$(docker exec "$postgres" psql -U cloudx -d cloudx -tAc "SELECT version_num FROM alembic_version")" = "20260814_0001"
       - name: Run backend security regression tests
         run: docker run --rm --entrypoint python backend:latest -m unittest discover -s /app/tests
