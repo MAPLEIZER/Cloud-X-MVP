@@ -28,11 +28,23 @@ export function StatusBadge({ status }: { status: NetworkScan['status'] }) {
             text: 'Completed',
             className: 'bg-green-100 text-green-800 border-green-200',
         },
+        queued: {
+            variant: 'secondary' as const,
+            icon: Clock,
+            text: 'Queued',
+            className: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+        },
         running: {
             variant: 'default' as const,
             icon: RefreshCw,
             text: 'Running',
             className: 'bg-blue-100 text-blue-800 border-blue-200',
+        },
+        stopping: {
+            variant: 'secondary' as const,
+            icon: RefreshCw,
+            text: 'Stopping',
+            className: 'bg-orange-100 text-orange-800 border-orange-200',
         },
         failed: {
             variant: 'destructive' as const,
@@ -56,10 +68,11 @@ export function StatusBadge({ status }: { status: NetworkScan['status'] }) {
 
     const config = statusConfig[status] || statusConfig.submitted
     const Icon = config.icon
+    const spinning = status === 'running' || status === 'stopping'
 
     return (
         <Badge className={`flex items-center gap-1 ${config.className}`}>
-            <Icon size={12} className={status === 'running' ? 'animate-spin' : ''} />
+            <Icon size={12} className={spinning ? 'animate-spin' : ''} />
             {config.text}
         </Badge>
     )

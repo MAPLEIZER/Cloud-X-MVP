@@ -45,8 +45,10 @@ const scanOptions = {
   ],
 }
 
+const ACTIVE_SCAN_STATES = new Set(['submitted', 'queued', 'running', 'stopping'])
+
 export function NetworkScan() {
-  const { state, startScan } = useApp()
+  const { state, startScan, stopScan } = useApp()
   const [formData, setFormData] = useState({
     target: '',
     tool: 'nmap' as keyof typeof scanOptions,
@@ -54,6 +56,7 @@ export function NetworkScan() {
     port: '',
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [stoppingJobId, setStoppingJobId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleToolChange = (selectedTool: keyof typeof scanOptions) => {
@@ -103,10 +106,23 @@ export function NetworkScan() {
     }
   }
 
+  const handleStop = async (jobId: string) => {
+    setStoppingJobId(jobId)
+    setError(null)
+    try {
+      await stopScan(jobId)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop scan')
+    } finally {
+      setStoppingJobId(null)
+    }
+  }
+
   const currentScanOptions = scanOptions[formData.tool]
   const needsPort = currentScanOptions.find(
     (opt) => opt.value === formData.scanType
   )?.requiresPort
+  const activeScans = state.scans.filter((scan) => ACTIVE_SCAN_STATES.has(scan.status))
 
   return (
     <div className='space-y-6'>
@@ -236,7 +252,7 @@ export function NetworkScan() {
             {isLoading && (
               <Alert>
                 <Loader2 className='h-4 w-4 animate-spin' />
-                <AlertDescription>Starting scan...</AlertDescription>
+                <AlertDescription>Queueing scan...</AlertDescription>
               </Alert>
             )}
           </CardContent>
@@ -262,7 +278,7 @@ export function NetworkScan() {
               {isLoading ? (
                 <>
                   <Loader2 className='mr-2 h-4 w-4 animate-spin' />
-                  Scanning...
+                  Queueing...
                 </>
               ) : (
                 <>
@@ -276,54 +292,66 @@ export function NetworkScan() {
       </Card>
 
       {/* Active Scans */}
-      {state.scans.filter(
-        (scan) => scan.status === 'running' || scan.status === 'submitted'
-      ).length > 0 && (
+      {activeScans.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle>Active Scans</CardTitle>
-            <CardDescription>Currently running network scans</CardDescription>
+            <CardDescription>
+              Queued and executing network scans managed by the worker queue
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className='space-y-3'>
-              {state.scans
-                .filter(
-                  (scan) =>
-                    scan.status === 'running' || scan.status === 'submitted'
-                )
-                .map((scan) => (
+              {activeScans.map((scan) => {
+                const isStopping =
+                  scan.status === 'stopping' || stoppingJobId === scan.job_id
+                return (
                   <div
                     key={scan.job_id}
                     className='flex items-center justify-between rounded-lg border p-4'
                   >
                     <div className='flex items-center space-x-3'>
                       <div className='flex items-center space-x-2'>
-                        <Loader2 className='h-4 w-4 animate-spin text-blue-600' />
+                        {scan.status === 'queued' || scan.status === 'submitted' ? (
+                          <Loader2 className='h-4 w-4 text-amber-600' />
+                        ) : (
+                          <Loader2 className='h-4 w-4 animate-spin text-blue-600' />
+                        )}
                         <div>
                           <p className='font-medium'>{scan.target}</p>
                           <p className='text-muted-foreground text-sm'>
                             {scan.tool} • {scan.scan_type}
-                            {scan.progress && ` • ${scan.progress}%`}
+                            {scan.progress != null && scan.progress > 0
+                              ? ` • ${scan.progress}%`
+                              : ''}
                           </p>
                         </div>
                       </div>
                     </div>
                     <div className='flex items-center gap-2'>
-                      <Badge className='bg-blue-100 text-blue-800'>
-                        {scan.status}
+                      <Badge
+                        variant={scan.status === 'stopping' ? 'secondary' : 'default'}
+                        className='capitalize'
+                      >
+                        {isStopping ? 'stopping' : scan.status}
                       </Badge>
                       <Button
                         variant='outline'
                         size='sm'
-                        onClick={() => {
-                          // Stop scan functionality (we'll implement this)
-                        }}
+                        disabled={isStopping}
+                        onClick={() => void handleStop(scan.job_id)}
+                        title={isStopping ? 'Stopping scan' : 'Stop scan'}
                       >
-                        <Square className='h-3 w-3' />
+                        {isStopping ? (
+                          <Loader2 className='h-3 w-3 animate-spin' />
+                        ) : (
+                          <Square className='h-3 w-3' />
+                        )}
                       </Button>
                     </div>
                   </div>
-                ))}
+                )
+              })}
             </div>
           </CardContent>
         </Card>
