@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Cloud-X branch-policy validator and report-only classifier."""
+"""Cloud-X branch-policy validator, classifier, and PR-route enforcement."""
 from __future__ import annotations
 
 import argparse
@@ -62,6 +62,16 @@ def validate_policy(policy: dict) -> None:
         for key in ("branch_manager_enabled", "lane_sync_enabled", "audit_apply_enabled"):
             if automation.get(key) is not False:
                 raise PolicyError(f"{key} must be false in report-only mode")
+    if policy["mode"] == "enforce":
+        enforcement = policy.get("enforcement", {})
+        for key in ("pr_routing", "push_classification", "scheduled_audit"):
+            if enforcement.get(key) is not True:
+                raise PolicyError(f"{key} must be true in enforce mode")
+        if enforcement.get("destructive_recovery") is not False:
+            raise PolicyError("destructive recovery remains disabled until recovery is proven")
+        dep = policy["bounded_prefixes"].get("dependabot/", {})
+        if dep.get("mode") != "enforce" or dep.get("pr_base") != "dev":
+            raise PolicyError("Dependabot must be enforced through dev")
 
 def classify_branch(branch: str, policy: dict) -> tuple[str, str]:
     if branch in policy["permanent_branches"]:
@@ -77,10 +87,49 @@ def classify_branch(branch: str, policy: dict) -> tuple[str, str]:
         return "future-disabled", prefix
     return "violation", "unknown branch type"
 
+def validate_pr_route(head: str, base: str, actor: str, head_repo: str, repository: str, policy: dict) -> None:
+    """Raise PolicyError when a PR violates the authorized graph."""
+    if head_repo and head_repo != repository:
+        if base != "dev":
+            raise PolicyError("external contributor PRs must target dev")
+        if actor.endswith("[bot]"):
+            raise PolicyError("bot PRs may not use the fork-contributor exception")
+        return
+    if head in {"feature/backend", "feature/frontend"}:
+        if base != "dev":
+            raise PolicyError(f"{head} must target dev")
+        return
+    if head == "dev":
+        if base != "staging":
+            raise PolicyError("dev may only promote to staging")
+        return
+    if head == "staging":
+        if base != "main":
+            raise PolicyError("staging may only promote to main")
+        return
+    if head == "main":
+        if base != "dev":
+            raise PolicyError("main may only reconcile to dev")
+        return
+    if head.startswith("dependabot/"):
+        dep = policy["bounded_prefixes"]["dependabot/"]
+        if actor != dep.get("required_actor", "dependabot[bot]"):
+            raise PolicyError("Dependabot namespace requires the verified Dependabot actor")
+        if base != dep["pr_base"]:
+            raise PolicyError("Dependabot PRs must target dev")
+        return
+    status, detail = classify_branch(head, policy)
+    raise PolicyError(f"PR head is not authorized: {status} ({detail})")
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("validate", "classify", "check"))
+    parser.add_argument("command", choices=("validate", "classify", "check", "check-pr"))
     parser.add_argument("branch", nargs="?")
+    parser.add_argument("--head")
+    parser.add_argument("--base")
+    parser.add_argument("--actor", default="")
+    parser.add_argument("--head-repo", default="")
+    parser.add_argument("--repository", default="")
     args = parser.parse_args()
     try:
         policy = load_policy()
@@ -90,6 +139,16 @@ def main() -> int:
         return 2
     if args.command == "validate":
         print("branch-policy: valid")
+        return 0
+    if args.command == "check-pr":
+        if not args.head or not args.base or not args.repository:
+            parser.error("--head, --base and --repository are required for check-pr")
+        try:
+            validate_pr_route(args.head, args.base, args.actor, args.head_repo, args.repository, policy)
+        except PolicyError as exc:
+            print(f"branch-policy: PR route denied: {exc}", file=sys.stderr)
+            return 2
+        print(f"branch-policy: PR route allowed: {args.head} -> {args.base}")
         return 0
     if not args.branch:
         parser.error("branch is required for classify/check")
