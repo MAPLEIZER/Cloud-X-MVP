@@ -50,3 +50,6 @@ jobs:
           file: ./cloudx-flask-backend/Dockerfile
           tags: backend:latest
           load: true
+
+      - name: Run backend security regression tests
+        run: docker run --rm --entrypoint python backend:latest -m unittest discover -s /app/tests
