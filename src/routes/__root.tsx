@@ -4,6 +4,7 @@ import NotFound from '@/pages/not-found'
 import { ClerkProvider } from '@clerk/clerk-react'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
+import { ApiAuthBridge } from '@/components/auth/api-auth-bridge'
 import { AppProvider } from '@/context/app-context'
 import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
@@ -20,6 +21,7 @@ export const Route = createRootRouteWithContext<{
   component: () => {
     return (
       <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
+        <ApiAuthBridge />
         <AppProvider>
           <NavigationProgress />
           <Outlet />
