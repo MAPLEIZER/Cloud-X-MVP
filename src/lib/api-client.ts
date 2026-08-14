@@ -38,6 +38,56 @@ export interface SyncStatus {
   reason?: string
 }
 
+export interface MetricDataPoint {
+  value: number
+  timestamp: number
+  isSpike?: boolean
+}
+
+export interface SystemMonitorResponse {
+  source: 'local_psutil' | 'wazuh_syscollector' | 'agentless_ping'
+  mode: 'local' | 'agent' | 'agentless'
+  target: string
+  is_agentless: boolean
+  is_agent_based: boolean
+  collected_at?: string | null
+  cpu: MetricDataPoint[]
+  memory: MetricDataPoint[]
+  disk: MetricDataPoint[]
+  network: MetricDataPoint[]
+  latency: MetricDataPoint[]
+  network_rx_mbps?: number | null
+  network_tx_mbps?: number | null
+  network_unit?: string | null
+  availability: {
+    cpu: boolean
+    memory: boolean
+    disk: boolean
+    network_throughput: boolean
+    latency: boolean
+    gpu: boolean
+    vram: boolean
+  }
+  note: string
+  agent?: {
+    id: string
+    name?: string | null
+    ip?: string | null
+    status?: string | null
+  }
+  network_counters?: {
+    rx_bytes: number
+    tx_bytes: number
+  }
+  hardware?: {
+    cpu_name?: string | null
+    cpu_cores?: number | null
+    cpu_mhz?: number | null
+    ram_total?: number | null
+    ram_free?: number | null
+  }
+}
+
 export interface SecurityEngineStatus {
   provider: 'wazuh'
   manager_connected: boolean
@@ -217,6 +267,12 @@ class CloudXApiClient {
 
   async getSyncStatus(): Promise<SyncStatus> {
     return this.request<SyncStatus>('/api/sync-status')
+  }
+
+  async getSystemMonitor(target: string): Promise<SystemMonitorResponse> {
+    return this.request<SystemMonitorResponse>(
+      `/api/system-monitor?target=${encodeURIComponent(target)}`
+    )
   }
 
   async startScan(params: ScanParams): Promise<ScanResponse> {
