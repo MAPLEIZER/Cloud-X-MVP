@@ -55,7 +55,7 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.539.0",
     "react": "^19.1.1",
-    "react-day-picker": "9.8.1",
+    "react-day-picker": "10.0.1",
     "react-dom": "^19.1.1",
     "react-grid-layout": "^1.5.2",
     "react-hook-form": "^7.62.0",
