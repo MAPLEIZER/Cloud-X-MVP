@@ -13,6 +13,10 @@ redis>=8.0.1,<9
 rq>=2.10.0,<3
 xmltodict>=1.0.4,<2
 paramiko>=5.0.0,<6
+# Security floor: 49.0.0 fixes currently published cryptography advisories that
+# are remediable on a stable release. Major 50 is not yet released as of the
+# 2026-08-18 review and is tracked separately before widening this range.
+cryptography>=49.0.0,<50
 pywinrm>=0.5.0,<1
 psutil>=7.2.2,<8
 ping3>=5.1.5,<6
