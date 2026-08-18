@@ -1,0 +1,47 @@
+name: One-shot Dependency Lock Refresh
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - feature/backend
+    paths:
+      - package.json
+      - .github/workflows/dependency-lock-refresh.yml
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature lane
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feature/backend
+          fetch-depth: 0
+
+      - name: Regenerate pnpm lockfile with the repository-pinned pnpm
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            node:24-alpine \
+            sh -ec '
+              npm install --global pnpm@10.34.5 >/dev/null
+              pnpm install --lockfile-only
+            '
+
+      - name: Remove this one-shot workflow and commit generated lockfile
+        run: |
+          rm -f .github/workflows/dependency-lock-refresh.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json pnpm-lock.yaml .github/workflows/dependency-lock-refresh.yml
+          if git diff --cached --quiet; then
+            echo "No lockfile changes were required."
+            exit 0
+          fi
+          git commit -m "security(deps): regenerate patched pnpm lockfile"
+          git push origin HEAD:feature/backend
