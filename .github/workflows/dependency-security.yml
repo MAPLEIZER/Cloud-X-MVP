@@ -1,0 +1,56 @@
+name: Dependency Security
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
+  pull_request:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
+  workflow_dispatch:
+
+jobs:
+  node_audit:
+    name: Audit Node dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Audit pnpm lockfile for high/critical advisories
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -w /workspace \
+            node:24-alpine \
+            sh -ec '
+              npm install --global pnpm@10.34.5 >/dev/null
+              pnpm audit --audit-level high
+            '
+
+  python_audit:
+    name: Audit Python dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Audit resolved Python requirements
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -w /workspace \
+            python:3.13-slim \
+            sh -ec '
+              python -m pip install --disable-pip-version-check --no-cache-dir pip-audit==2.10.1 >/dev/null
+              pip-audit --progress-spinner off -r cloudx-flask-backend/requirements.txt
+            '
