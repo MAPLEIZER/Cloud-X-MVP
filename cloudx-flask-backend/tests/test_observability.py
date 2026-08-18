@@ -36,16 +36,16 @@ class _HealthyEngine:
         return {
             "manager_connected": True,
             "indexer_configured": True,
-            "indexer_connected": True,
+            "indexer_status": "green",
         }
 
 
 class _DegradedEngine:
     def status(self):
         return {
-            "manager_connected": False,
+            "manager_connected": True,
             "indexer_configured": True,
-            "indexer_connected": False,
+            "indexer_status": "red",
         }
 
 
@@ -133,7 +133,7 @@ class ObservabilityTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()["status"], "ready")
 
-    def test_disconnected_wazuh_reports_degraded(self):
+    def test_red_indexer_reports_degraded(self):
         response = self._health_client(engine=_DegradedEngine()).get(
             "/api/health/ready"
         )
