@@ -36,6 +36,22 @@ jobs:
           file: Dockerfile.frontend
           tags: frontend:latest
           load: true
+      - name: Verify frontend runtime configuration
+        run: |
+          set -euo pipefail
+          container="cloudx-frontend-${GITHUB_RUN_ID}"
+          cleanup() {
+            docker rm -f "$container" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker run -d --name "$container" \
+            -e CLOUDX_API_BASE_URL= \
+            -e CLERK_PUBLISHABLE_KEY=pk_test_ci_runtime \
+            frontend:latest >/dev/null
+          config="$(docker exec "$container" cat /usr/share/nginx/html/cloudx-config.js)"
+          grep -Fq 'apiBaseUrl: ""' <<<"$config"
+          grep -Fq 'clerkPublishableKey: "pk_test_ci_runtime"' <<<"$config"
+
   build_backend:
     name: Build Backend
     runs-on: ubuntu-latest
@@ -45,7 +61,9 @@ jobs:
       - name: Validate shell scripts
         run: |
           bash -n install_backend.sh
-          find cloudx-flask-backend/scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          find cloudx-flask-backend/scripts deploy -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: Validate release bundle tooling
+        run: python3 -m unittest tests/test_release_bundle.py
       - name: Validate PowerShell scripts
         shell: pwsh
         run: |

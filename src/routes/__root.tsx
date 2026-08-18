@@ -8,11 +8,12 @@ import { ApiAuthBridge } from '@/components/auth/api-auth-bridge'
 import { AppProvider } from '@/context/app-context'
 import { Toaster } from '@/components/ui/sonner'
 import { NavigationProgress } from '@/components/navigation-progress'
+import { getClerkPublishableKey } from '@/lib/runtime-config'
 
-const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const PUBLISHABLE_KEY = getClerkPublishableKey()
 
 if (!PUBLISHABLE_KEY) {
-  throw new Error('Missing Publishable Key')
+  throw new Error('Missing Clerk publishable key')
 }
 
 export const Route = createRootRouteWithContext<{
