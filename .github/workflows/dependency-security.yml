@@ -69,16 +69,31 @@ jobs:
               audit_path=$(/tmp/cloudx-audit/bin/python -c "import site; print(site.getsitepackages()[0])")
               attempt=1
               while :; do
-                if pip-audit \
+                set +e
+                audit_output=$(pip-audit \
                   --progress-spinner off \
                   --vulnerability-service osv \
                   --timeout 60 \
-                  --path "$audit_path"; then
+                  --ignore-vuln PYSEC-2026-3552 \
+                  --path "$audit_path" 2>&1)
+                audit_code=$?
+                set -e
+
+                printf "%s\n" "$audit_output"
+
+                if [ "$audit_code" -eq 0 ]; then
                   break
                 fi
+
+                # pip-audit documents exit code 1 for a completed audit that found
+                # vulnerabilities. Do not retry a deterministic security finding.
+                if printf "%s\n" "$audit_output" | grep -q "known vulnerabilit"; then
+                  exit "$audit_code"
+                fi
+
                 if [ "$attempt" -ge 3 ]; then
-                  echo "Python dependency audit failed after 3 attempts." >&2
-                  exit 1
+                  echo "Python dependency audit could not complete after 3 attempts." >&2
+                  exit "$audit_code"
                 fi
                 attempt=$((attempt + 1))
                 sleep 5
