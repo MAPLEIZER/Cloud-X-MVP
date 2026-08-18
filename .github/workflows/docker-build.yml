@@ -149,9 +149,6 @@ jobs:
           # Seed in one short-lived process, then execute in a different worker
           # container to prove jobs do not depend on the submitting/API process.
           docker run --rm --network "$network" "${runtime_env[@]}" \
-            --entrypoint alembic backend:latest upgrade head
-
-          docker run --rm --network "$network" "${runtime_env[@]}" \
             --entrypoint python backend:latest /app/tests/queue_integration_probe.py seed
 
           docker run --rm --network "$network" --cap-add NET_RAW \
