@@ -6,7 +6,18 @@ Gunicorn serves the application, keeping provider-specific wiring out of the
 core domain.
 """
 
+from error_tracking import (
+    create_error_tracking_blueprint,
+    init_error_tracking,
+    is_error_tracking_enabled,
+)
+
+# Initialize the Sentry-compatible SDK before importing/creating the Flask app so
+# FlaskIntegration can instrument request failures. With no DSN this is a no-op.
+init_error_tracking(component="api", flask=True)
+
 from app import app, db
+from auth import clerk_authorized
 from observability import (
     configure_json_logging,
     create_health_blueprint,
@@ -19,6 +30,7 @@ from system_metrics import create_system_monitor_view
 
 configure_json_logging()
 install_request_observability(app)
+app.register_blueprint(create_error_tracking_blueprint(clerk_authorized))
 
 security_engine = WazuhSecurityEngine.from_env()
 app.register_blueprint(create_security_blueprint(security_engine))
@@ -39,4 +51,9 @@ metrics_provider = (
 # existing clients keep working while production stops emitting generated data.
 app.view_functions["system_monitor"] = create_system_monitor_view(metrics_provider)
 
-__all__ = ["app", "security_engine", "metrics_provider"]
+__all__ = [
+    "app",
+    "security_engine",
+    "metrics_provider",
+    "is_error_tracking_enabled",
+]

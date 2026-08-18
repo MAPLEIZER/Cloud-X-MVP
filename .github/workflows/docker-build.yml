@@ -60,6 +60,13 @@ jobs:
             }
           }
           if ($failed) { exit 1 }
+      - name: Validate reverse-proxy nginx configuration
+        run: |
+          docker run --rm \
+            -e BACKEND_UPSTREAM=http://127.0.0.1:5001 \
+            -e FRONTEND_UPSTREAM=http://127.0.0.1:8080 \
+            -v "$PWD/deploy/reverse-proxy/nginx.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+            nginx:alpine nginx -t
       - name: Set up QEMU
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
       - name: Set up Docker Buildx
