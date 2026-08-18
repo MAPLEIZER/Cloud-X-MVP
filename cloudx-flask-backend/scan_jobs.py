@@ -4,6 +4,12 @@ from datetime import datetime
 
 from rq import Worker
 
+from error_tracking import init_error_tracking
+
+# RQ runs in a separate process from Gunicorn, so initialize its integration at
+# module load. With no ERROR_TRACKING_DSN configured this is intentionally a no-op.
+init_error_tracking(component="scan-worker", rq=True)
+
 from app import Scan, app, db
 from scan_queue import clear_cancel_request, is_cancel_requested
 from scanners import network_scanners as scanners
