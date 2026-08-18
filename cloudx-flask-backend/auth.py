@@ -1,8 +1,9 @@
 import logging
 import os
+from dataclasses import dataclass
 from functools import wraps
 
-from clerk_backend_api import AuthenticateRequestOptions, authenticate_request
+import jwt
 from flask import current_app, g, jsonify, request
 
 from security_utils import (
@@ -23,6 +24,77 @@ except ValueError as exc:
 WINDOWS_AGENT_DEPLOYMENT_ENABLED = os.getenv(
     "ENABLE_WINDOWS_AGENT_DEPLOYMENT", "false"
 ).strip().lower() in {"1", "true", "yes", "on"}
+
+
+@dataclass(frozen=True)
+class RequestAuthState:
+    """Minimal request-auth state retained for internal compatibility."""
+
+    is_signed_in: bool
+    payload: dict
+
+
+def _extract_session_token(flask_request):
+    """Return a Clerk session token from Bearer auth or the same-origin cookie."""
+
+    authorization = flask_request.headers.get("Authorization", "").strip()
+    if authorization:
+        scheme, separator, token = authorization.partition(" ")
+        if separator and scheme.lower() == "bearer" and token.strip():
+            return token.strip()
+        raise jwt.InvalidTokenError("Malformed Authorization header")
+
+    cookie_token = flask_request.cookies.get("__session")
+    if isinstance(cookie_token, str) and cookie_token.strip():
+        return cookie_token.strip()
+    return None
+
+
+def authenticate_request(flask_request, *, jwt_key, authorized_parties):
+    """Verify a Clerk session JWT using the instance PEM public key.
+
+    Cloud-X intentionally performs networkless verification instead of importing
+    Clerk's generated Python SDK. Clerk documents manual verification as a
+    supported path: verify RS256, expiration/not-before, and the `azp` claim
+    against the trusted frontend origins. This keeps request authentication
+    independent of the Clerk SDK's cryptography version ceiling.
+    """
+
+    token = _extract_session_token(flask_request)
+    if not token:
+        return RequestAuthState(is_signed_in=False, payload={})
+
+    header = jwt.get_unverified_header(token)
+    if header.get("alg") != "RS256":
+        raise jwt.InvalidAlgorithmError("Clerk session tokens must use RS256")
+    if header.get("typ") not in {None, "JWT"}:
+        raise jwt.InvalidTokenError("Unexpected JWT header type")
+
+    payload = jwt.decode(
+        token,
+        jwt_key,
+        algorithms=["RS256"],
+        options={
+            "require": ["exp", "nbf", "sub", "iss"],
+            # Cloud-X does not currently configure a Clerk JWT audience. PyJWT
+            # otherwise rejects any token that happens to contain `aud` when no
+            # expected audience is supplied.
+            "verify_aud": False,
+        },
+        leeway=5,
+    )
+
+    authorized_party = payload.get("azp")
+    if authorized_party is not None and authorized_party not in authorized_parties:
+        raise jwt.InvalidTokenError("Unauthorized Clerk token party")
+
+    # Clerk documents `sts=pending` for sessions that have not satisfied an
+    # organization requirement. Fail closed rather than treating that token as
+    # a fully signed-in control-plane session.
+    if payload.get("sts") == "pending":
+        raise jwt.InvalidTokenError("Clerk session is pending")
+
+    return RequestAuthState(is_signed_in=True, payload=payload)
 
 
 def _active_org_id(payload):
@@ -89,14 +161,10 @@ def clerk_authorized(view):
         try:
             state = authenticate_request(
                 request,
-                AuthenticateRequestOptions(
-                    secret_key=current_app.config.get("CLERK_SECRET_KEY"),
-                    jwt_key=current_app.config.get("CLERK_JWT_KEY"),
-                    authorized_parties=current_app.config["CLERK_AUTHORIZED_PARTIES"],
-                    accepts_token=["session_token"],
-                ),
+                jwt_key=current_app.config["CLERK_JWT_KEY"],
+                authorized_parties=current_app.config["CLERK_AUTHORIZED_PARTIES"],
             )
-        except Exception:
+        except (jwt.PyJWTError, ValueError, TypeError):
             logger.warning("Clerk request authentication failed")
             return jsonify({"error": "Authentication failed"}), 401
 
