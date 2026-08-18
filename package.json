@@ -19,7 +19,7 @@
     "knip": "knip"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.61.3",
+    "@clerk/clerk-react": "^5.61.6",
     "@hookform/resolvers": "^5.8.0",
     "@radix-ui/react-alert-dialog": "^1.1.23",
     "@radix-ui/react-avatar": "^1.2.6",
@@ -69,8 +69,18 @@
     "zod": "^4.4.3",
     "zustand": "^5.0.15"
   },
-  "resolutions": {
-    "js-yaml": "^4.1.1"
+  "pnpm": {
+    "overrides": {
+      "brace-expansion": "1.1.18",
+      "flatted": "3.4.2",
+      "js-yaml": "4.3.1",
+      "lodash": "4.18.1",
+      "minimatch": "3.1.4",
+      "nanoid": "3.3.18",
+      "picomatch": "4.0.4",
+      "postcss": "8.5.18",
+      "rollup": "4.59.0"
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.33.0",
@@ -93,6 +103,6 @@
     "prettier-plugin-tailwindcss": "^0.8.1",
     "typescript": "~5.9.2",
     "typescript-eslint": "^8.67.0",
-    "vite": "^7.1.11"
+    "vite": "^7.3.5"
   }
 }
