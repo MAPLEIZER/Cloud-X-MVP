@@ -1,3 +1,5 @@
+import { getApiBaseUrl } from '@/lib/runtime-config'
+
 // API Response Types
 export interface ScanParams {
   target: string
@@ -202,8 +204,7 @@ class CloudXApiClient {
   private tokenProvider: TokenProvider | null = null
 
   constructor(
-    baseURL: string = import.meta.env.VITE_API_BASE_URL ||
-      'http://localhost:5001',
+    baseURL: string = getApiBaseUrl(),
     timeout: number = 30000
   ) {
     this.baseURL = baseURL
