@@ -83,7 +83,7 @@ class ClerkJwtVerificationTests(unittest.TestCase):
                 "nbf": int(time.time()) - 1,
                 "exp": int(time.time()) + 60,
             },
-            "unit-test-secret",
+            "unit-test-secret-that-is-at-least-32-bytes-long",
             algorithm="HS256",
             headers={"typ": "JWT"},
         )
@@ -92,11 +92,7 @@ class ClerkJwtVerificationTests(unittest.TestCase):
 
     def test_same_origin_session_cookie_is_supported(self):
         token = self._token()
-        with self.app.test_request_context("/api/test"):
-            auth.request.cookies  # ensure Flask request proxy is active
-        client = self.app.test_client()
-        client.set_cookie("__session", token)
-        with client.application.test_request_context(
+        with self.app.test_request_context(
             "/api/test", headers={"Cookie": f"__session={token}"}
         ):
             state = auth.authenticate_request(
