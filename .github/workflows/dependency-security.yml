@@ -44,13 +44,43 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Audit resolved Python requirements
+      - name: Resolve app environment and audit it through OSV
         run: |
           docker run --rm \
             -v "$PWD:/workspace:ro" \
             -w /workspace \
             python:3.13-slim \
             sh -ec '
-              python -m pip install --disable-pip-version-check --no-cache-dir pip-audit==2.10.1 >/dev/null
-              pip-audit --progress-spinner off -r cloudx-flask-backend/requirements.txt
+              python -m venv /tmp/cloudx-audit
+              /tmp/cloudx-audit/bin/python -m pip install \
+                --disable-pip-version-check \
+                --no-cache-dir \
+                --timeout 60 \
+                --retries 5 \
+                -r cloudx-flask-backend/requirements.txt >/dev/null
+
+              python -m pip install \
+                --disable-pip-version-check \
+                --no-cache-dir \
+                --timeout 60 \
+                --retries 5 \
+                pip-audit==2.10.1 >/dev/null
+
+              audit_path="$('/tmp/cloudx-audit/bin/python' -c 'import site; print(site.getsitepackages()[0])')"
+              attempt=1
+              while :; do
+                if pip-audit \
+                  --progress-spinner off \
+                  --vulnerability-service osv \
+                  --timeout 60 \
+                  --path "$audit_path"; then
+                  break
+                fi
+                if [ "$attempt" -ge 3 ]; then
+                  echo "Python dependency audit failed after 3 attempts." >&2
+                  exit 1
+                fi
+                attempt=$((attempt + 1))
+                sleep 5
+              done
             '
