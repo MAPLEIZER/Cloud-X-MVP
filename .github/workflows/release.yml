@@ -8,6 +8,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -34,6 +36,16 @@ jobs:
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$source_sha" origin/main
           echo "SOURCE_SHA=$source_sha" >> "$GITHUB_ENV"
+
+      - name: Refuse existing release mutation
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists; refusing to mutate published release state." >&2
+            exit 1
+          fi
 
       - name: Re-audit Node dependencies at release time
         shell: bash
@@ -129,6 +141,39 @@ jobs:
             org.opencontainers.image.revision=${{ env.SOURCE_SHA }}
             org.opencontainers.image.version=${{ github.ref_name }}
 
+      - name: Attest frontend provenance with GitHub/Sigstore identity
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ghcr.io/mapleizer/cloudx-frontend
+          subject-digest: ${{ steps.frontend.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest backend provenance with GitHub/Sigstore identity
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-name: ghcr.io/mapleizer/cloudx-backend
+          subject-digest: ${{ steps.backend.outputs.digest }}
+          push-to-registry: true
+
+      - name: Verify published image signing identity
+        shell: bash
+        env:
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+        run: |
+          set -euo pipefail
+          signer="github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+          gh attestation verify \
+            "oci://ghcr.io/mapleizer/cloudx-frontend@${FRONTEND_DIGEST}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com
+          gh attestation verify \
+            "oci://ghcr.io/mapleizer/cloudx-backend@${BACKEND_DIGEST}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com
+
       - name: Resolve immutable infrastructure images
         id: infra
         shell: bash
@@ -169,25 +214,55 @@ jobs:
             --postgres-image "$POSTGRES_IMAGE" \
             --redis-image "$REDIS_IMAGE" \
             --nginx-image "$NGINX_IMAGE" \
+            --repository "$GITHUB_REPOSITORY" \
+            --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
             --output "$bundle"
 
           tar -C dist -czf "${bundle}.tar.gz" "$(basename "$bundle")"
           sha256sum "${bundle}.tar.gz" > "${bundle}.tar.gz.sha256"
 
-      - name: Publish GitHub Release assets
+      - name: Attest appliance archive
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d # v4.2.1
+        with:
+          subject-path: dist/cloudx-appliance-${{ github.ref_name }}.tar.gz
+
+      - name: Verify and export appliance attestation evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          artifact="dist/cloudx-appliance-${GITHUB_REF_NAME}.tar.gz"
+          signer="github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml"
+          gh attestation verify "$artifact" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$signer" \
+            --cert-oidc-issuer https://token.actions.githubusercontent.com
+
+          mkdir -p dist/attestations
+          (
+            cd dist/attestations
+            gh attestation download "../cloudx-appliance-${GITHUB_REF_NAME}.tar.gz" \
+              --repo "$GITHUB_REPOSITORY"
+            attestation_file="$(find . -maxdepth 1 -type f -name 'sha256:*.jsonl' -print -quit)"
+            test -n "$attestation_file"
+            mv "$attestation_file" "cloudx-appliance-${GITHUB_REF_NAME}.attestation.jsonl"
+            gh attestation trusted-root > trusted_root.jsonl
+          )
+
+      - name: Publish immutable GitHub prerelease assets
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           bundle="dist/cloudx-appliance-${GITHUB_REF_NAME}"
-          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" \
-              --verify-tag \
-              --title "Cloud-X ${GITHUB_REF_NAME}" \
-              --notes "Cloud-X appliance candidate. Verify release evidence and #28 acceptance before declaring customer support."
-          fi
-          gh release upload "$GITHUB_REF_NAME" \
+          gh release create "$GITHUB_REF_NAME" \
+            --verify-tag \
+            --prerelease \
+            --title "Cloud-X ${GITHUB_REF_NAME} pre-production candidate" \
+            --notes "Cloud-X appliance candidate. Verify GitHub/Sigstore attestations, release evidence and #28 acceptance before declaring customer support." \
             "${bundle}.tar.gz" \
             "${bundle}.tar.gz.sha256" \
-            --clobber
+            "dist/attestations/cloudx-appliance-${GITHUB_REF_NAME}.attestation.jsonl" \
+            "dist/attestations/trusted_root.jsonl"
