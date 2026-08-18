@@ -1,0 +1,120 @@
+services:
+  postgres:
+    image: __POSTGRES_IMAGE__
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+    volumes:
+      - cloudx_postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: __REDIS_IMAGE__
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - cloudx_redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    image: __BACKEND_IMAGE__
+    env_file:
+      - .env
+    environment:
+      IDENTITY_FILE: /data/server_identity.json
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ERROR_TRACKING_RELEASE: cloudx-__CLOUDX_VERSION__
+    volumes:
+      - cloudx_data:/data
+    cap_drop: [ALL]
+    cap_add: [NET_RAW]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/health/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  scan-worker:
+    image: __BACKEND_IMAGE__
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      ERROR_TRACKING_RELEASE: cloudx-__CLOUDX_VERSION__
+    entrypoint: ["rq"]
+    command:
+      [
+        "worker-pool",
+        "scans",
+        "--num-workers",
+        "${SCAN_WORKERS:-2}",
+        "--url",
+        "${REDIS_URL:-redis://redis:6379/0}",
+        "--serializer",
+        "json",
+        "--worker-class",
+        "scan_jobs.CloudXWorker",
+      ]
+    cap_drop: [ALL]
+    cap_add: [NET_RAW]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  frontend:
+    image: __FRONTEND_IMAGE__
+    environment:
+      CLOUDX_API_BASE_URL: ${CLOUDX_API_BASE_URL:-}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?CLERK_PUBLISHABLE_KEY must be set}
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  reverse-proxy:
+    image: __NGINX_IMAGE__
+    environment:
+      BACKEND_UPSTREAM: http://backend:5001
+      FRONTEND_UPSTREAM: http://frontend:80
+    ports:
+      - "${CLOUDX_HTTP_PORT:-80}:80"
+      - "${CLOUDX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - ${CLOUDX_TLS_CERT_FILE:?CLOUDX_TLS_CERT_FILE must be set}:/etc/cloudx/tls/fullchain.pem:ro
+      - ${CLOUDX_TLS_KEY_FILE:?CLOUDX_TLS_KEY_FILE must be set}:/etc/cloudx/tls/privkey.pem:ro
+    restart: unless-stopped
+    depends_on:
+      frontend:
+        condition: service_started
+      backend:
+        condition: service_healthy
+
+volumes:
+  cloudx_data:
+  cloudx_postgres_data:
+  cloudx_redis_data:
