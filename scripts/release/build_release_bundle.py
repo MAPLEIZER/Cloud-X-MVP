@@ -97,7 +97,15 @@ def main() -> int:
     (output / "compose.yaml").write_text(compose, encoding="utf-8")
     shutil.copy2(TEMPLATE_DIR / "nginx.conf.template", output / "nginx.conf.template")
     shutil.copy2(TEMPLATE_DIR / ".env.example", output / ".env.example")
-    scripts = ("install.sh", "verify.sh", "verify-attestations.sh", "upgrade.sh", "rollback.sh")
+    scripts = (
+        "install.sh",
+        "verify.sh",
+        "verify-attestations.sh",
+        "host-preflight.sh",
+        "sync-tls.sh",
+        "upgrade.sh",
+        "rollback.sh",
+    )
     for script in scripts:
         target = output / "scripts" / script
         shutil.copy2(TEMPLATE_DIR / "scripts" / script, target)
@@ -112,8 +120,13 @@ def main() -> int:
         },
         "supported_architectures": ["linux/amd64"],
         "runtime_requirements": {
+            "validated_pilot_host": "Ubuntu 24.04 LTS x86_64",
+            "minimum_vcpu": 4,
+            "minimum_memory_gib": 8,
+            "minimum_free_disk_gib": 40,
             "docker_engine": "supported current Docker Engine",
             "docker_compose": "Compose v2",
+            "host_preflight": "scripts/host-preflight.sh",
         },
         "compatibility": {
             "manifest": None,

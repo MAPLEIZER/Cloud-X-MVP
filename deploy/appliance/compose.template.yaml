@@ -100,6 +100,7 @@ services:
     environment:
       BACKEND_UPSTREAM: http://backend:5001
       FRONTEND_UPSTREAM: http://frontend:80
+      CLOUDX_PUBLIC_HOSTNAME: ${CLOUDX_PUBLIC_HOSTNAME:?CLOUDX_PUBLIC_HOSTNAME must be set}
     ports:
       - "${CLOUDX_HTTP_PORT:-80}:80"
       - "${CLOUDX_HTTPS_PORT:-443}:443"
