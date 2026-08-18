@@ -50,6 +50,15 @@ def _extract_session_token(flask_request):
     return None
 
 
+def _normalize_jwt_key(value):
+    if not isinstance(value, str) or not value.strip():
+        raise jwt.InvalidKeyError("CLERK_JWT_KEY is required")
+    # Docker/Compose env files commonly carry multiline PEM values as literal
+    # backslash-n sequences. Accept both representations without weakening key
+    # validation in the crypto library.
+    return value.strip().replace("\\n", "\n")
+
+
 def authenticate_request(flask_request, *, jwt_key, authorized_parties):
     """Verify a Clerk session JWT using the instance PEM public key.
 
@@ -64,6 +73,7 @@ def authenticate_request(flask_request, *, jwt_key, authorized_parties):
     if not token:
         return RequestAuthState(is_signed_in=False, payload={})
 
+    key = _normalize_jwt_key(jwt_key)
     header = jwt.get_unverified_header(token)
     if header.get("alg") != "RS256":
         raise jwt.InvalidAlgorithmError("Clerk session tokens must use RS256")
@@ -72,7 +82,7 @@ def authenticate_request(flask_request, *, jwt_key, authorized_parties):
 
     payload = jwt.decode(
         token,
-        jwt_key,
+        key,
         algorithms=["RS256"],
         options={
             "require": ["exp", "nbf", "sub", "iss"],
