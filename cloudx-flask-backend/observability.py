@@ -24,7 +24,9 @@ _BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+")
 _SECRET_KV_RE = re.compile(
     r"(?i)\b(password|passwd|secret|token|api[_-]?key)\b\s*[:=]\s*([^\s,;]+)"
 )
-_URI_CREDENTIAL_RE = re.compile(r"(?P<scheme>\b[a-z][a-z0-9+.-]*://)(?P<creds>[^/@\s]+@)", re.I)
+_URI_CREDENTIAL_RE = re.compile(
+    r"(?P<scheme>\b[a-z][a-z0-9+.-]*://)(?P<creds>[^/@\s]+@)", re.I
+)
 
 
 def _utc_timestamp() -> str:
@@ -42,7 +44,9 @@ def redact_log_text(value: object) -> str:
     text_value = str(value)
     text_value = _BEARER_RE.sub("Bearer [REDACTED]", text_value)
     text_value = _SECRET_KV_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", text_value)
-    text_value = _URI_CREDENTIAL_RE.sub(lambda m: f"{m.group('scheme')}[REDACTED]@", text_value)
+    text_value = _URI_CREDENTIAL_RE.sub(
+        lambda m: f"{m.group('scheme')}[REDACTED]@", text_value
+    )
     return text_value
 
 
@@ -148,8 +152,8 @@ def install_request_observability(app) -> None:
             extra={
                 "event": "request_exception",
                 "request_id": getattr(g, "request_id", None),
-                "method": request.method if request else None,
-                "path": request.path if request else None,
+                "method": request.method,
+                "path": request.path,
             },
         )
 
@@ -208,10 +212,12 @@ def create_health_blueprint(db, queue_probe, security_engine=None) -> Blueprint:
                 engine_status = security_engine.status()
                 manager_connected = bool(engine_status.get("manager_connected"))
                 indexer_configured = bool(engine_status.get("indexer_configured", False))
-                indexer_connected = engine_status.get("indexer_connected")
-                engine_ok = manager_connected and (
-                    not indexer_configured or indexer_connected is not False
-                )
+                indexer_status = str(engine_status.get("indexer_status") or "").lower()
+                indexer_healthy = not indexer_configured or indexer_status in {
+                    "green",
+                    "yellow",
+                }
+                engine_ok = manager_connected and indexer_healthy
                 if not engine_ok:
                     degraded = True
                 components["security_engine"] = {
