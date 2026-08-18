@@ -1,0 +1,81 @@
+name: Project Metadata Sync
+
+on:
+  issues:
+    types:
+      - opened
+      - reopened
+      - closed
+      - edited
+      - labeled
+      - unlabeled
+      - assigned
+      - unassigned
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - closed
+      - edited
+      - labeled
+      - unlabeled
+      - ready_for_review
+      - converted_to_draft
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: Items to backfill into repository-linked Projects
+        required: true
+        default: open
+        type: choice
+        options:
+          - open
+          - all
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-metadata-${{ github.event.issue.number || github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync label metadata to Projects
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Synchronize repository-linked Projects
+        env:
+          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          BACKFILL_SCOPE: ${{ inputs.scope || 'open' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${PROJECTS_TOKEN:-}" ]]; then
+            {
+              echo "## Project metadata sync"
+              echo
+              echo "> [!NOTE]"
+              echo "> PROJECTS_TOKEN is not configured, so Project writes were skipped safely."
+              echo
+              echo "Repository labels remain authoritative. See docs/operations/PROJECT_AUTOMATION.md."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=Project sync skipped::PROJECTS_TOKEN is not configured."
+            exit 0
+          fi
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            python3 scripts/ci/sync_projects.py --backfill "$BACKFILL_SCOPE" | tee /tmp/project-sync-summary.md
+          else
+            python3 scripts/ci/sync_projects.py --event "$GITHUB_EVENT_PATH" | tee /tmp/project-sync-summary.md
+          fi
+
+          {
+            echo "## Project metadata sync"
+            echo
+            cat /tmp/project-sync-summary.md
+          } >> "$GITHUB_STEP_SUMMARY"

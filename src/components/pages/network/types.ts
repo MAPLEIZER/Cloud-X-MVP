@@ -5,7 +5,14 @@ export interface NetworkScan {
     target: string
     tool: string
     scan_type: string
-    status: 'completed' | 'running' | 'failed' | 'submitted' | 'stopped'
+    status:
+        | 'completed'
+        | 'queued'
+        | 'running'
+        | 'stopping'
+        | 'failed'
+        | 'submitted'
+        | 'stopped'
     progress?: number
     created_at: string
     results?: unknown

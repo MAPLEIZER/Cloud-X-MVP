@@ -1,6 +1,6 @@
 {
   "$schema": "./branch-policy.schema.json",
-  "version": 4,
+  "version": 5,
   "mode": "enforce",
   "permanent_branches": [
     "main",
@@ -38,8 +38,8 @@
     "owner_gated_merges": true,
     "auto_merge": false,
     "delete_branch_on_merge": false,
-    "branch_manager_enabled": false,
+    "branch_manager_enabled": true,
     "lane_sync_enabled": false,
-    "audit_apply_enabled": false
+    "audit_apply_enabled": true
   }
 }

@@ -9,6 +9,8 @@ This document is a project-level provenance guide, not a substitute for the lice
 | Project | Role in / around Cloud-X | Upstream license (project-level) | Notes |
 |---|---|---|---|
 | Wazuh | Initial endpoint/security-event engine | GPL-2.0 | Remains a separate upstream component; Cloud-X integrates through supported APIs/configuration surfaces. |
+| GlitchTip | Reference self-hosted centralized error tracking service | MIT | Runs as a separate operator-controlled service. Cloud-X sends sanitized events through GlitchTip's Sentry-compatible ingestion interface; hosted Sentry is not required. |
+| Sentry Python SDK (`sentry-sdk`) | Sentry-compatible event client used by the API and RQ worker | MIT | Client library only. Cloud-X configures PII/body collection off and applies an additional event scrubber before delivery. |
 | shadcn/ui | UI component source/patterns | MIT | Preserve notices for copied/adapted source where required. |
 | shadcn-admin | Historical dashboard inspiration/source material | MIT at upstream project at time of review | Legacy `Cloud-X-Dashboard` contained substantial upstream README/provenance material; preserve attribution when migrating unique UI code. |
 | Suricata | Candidate optional NIDS sensor | GPL-2.0 | Not part of the MVP core. |
@@ -34,6 +36,8 @@ Before any supported release:
 ## Upstream references
 
 - Wazuh: https://github.com/wazuh/wazuh
+- GlitchTip: https://gitlab.com/glitchtip/glitchtip-backend
+- Sentry Python SDK: https://github.com/getsentry/sentry-python
 - shadcn/ui: https://github.com/shadcn-ui/ui
 - shadcn-admin: https://github.com/satnaing/shadcn-admin
 - Suricata: https://github.com/OISF/suricata

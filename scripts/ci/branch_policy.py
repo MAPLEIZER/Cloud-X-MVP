@@ -19,22 +19,35 @@ EXPECTED_EDGES = {
 }
 VALID_MERGE_STRATEGIES = {"squash", "merge_commit", "reconcile"}
 
+
 class PolicyError(ValueError):
     pass
+
 
 def load_policy(path: Path = POLICY_PATH) -> dict:
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
 
+
 def validate_policy(policy: dict) -> None:
-    required = {"version", "mode", "permanent_branches", "agent_lanes", "edges", "bounded_prefixes", "automation"}
+    required = {
+        "version",
+        "mode",
+        "permanent_branches",
+        "agent_lanes",
+        "edges",
+        "bounded_prefixes",
+        "automation",
+    }
     missing = required - set(policy)
     if missing:
         raise PolicyError(f"missing keys: {sorted(missing)}")
     if policy["mode"] not in {"report-only", "enforce"}:
         raise PolicyError("mode must be report-only or enforce")
     if policy["permanent_branches"] != EXPECTED_PERMANENT:
-        raise PolicyError("permanent branches must be exactly: " + ", ".join(EXPECTED_PERMANENT))
+        raise PolicyError(
+            "permanent branches must be exactly: " + ", ".join(EXPECTED_PERMANENT)
+        )
     lanes = policy["agent_lanes"]
     if lanes != {"backend": "feature/backend", "frontend": "feature/frontend"}:
         raise PolicyError("agent lane mapping is invalid")
@@ -51,6 +64,7 @@ def validate_policy(policy: dict) -> None:
             raise PolicyError(f"{edge}: wrong merge strategy")
         if config.get("owner_gated") is not True:
             raise PolicyError(f"{edge}: merge must be owner-gated")
+
     automation = policy["automation"]
     if automation.get("owner_gated_merges") is not True:
         raise PolicyError("owner-gated merges must remain enabled")
@@ -58,20 +72,32 @@ def validate_policy(policy: dict) -> None:
         raise PolicyError("auto-merge must remain disabled")
     if automation.get("delete_branch_on_merge") is not False:
         raise PolicyError("global delete-on-merge must remain disabled")
+
     if policy["mode"] == "report-only":
         for key in ("branch_manager_enabled", "lane_sync_enabled", "audit_apply_enabled"):
             if automation.get(key) is not False:
                 raise PolicyError(f"{key} must be false in report-only mode")
+
     if policy["mode"] == "enforce":
         enforcement = policy.get("enforcement", {})
         for key in ("pr_routing", "push_classification", "scheduled_audit"):
             if enforcement.get(key) is not True:
                 raise PolicyError(f"{key} must be true in enforce mode")
         if enforcement.get("destructive_recovery") is not False:
-            raise PolicyError("destructive recovery remains disabled until recovery is proven")
+            raise PolicyError(
+                "destructive recovery remains disabled until recovery is proven"
+            )
+        for key in ("branch_manager_enabled", "audit_apply_enabled"):
+            if automation.get(key) is not True:
+                raise PolicyError(f"{key} must be true in enforce mode")
+        if automation.get("lane_sync_enabled") is not False:
+            raise PolicyError("lane sync must remain owner-controlled")
         dep = policy["bounded_prefixes"].get("dependabot/", {})
         if dep.get("mode") != "enforce" or dep.get("pr_base") != "dev":
             raise PolicyError("Dependabot must be enforced through dev")
+        if dep.get("requires_open_pr") is not True:
+            raise PolicyError("Dependabot branches must require an open PR")
+
 
 def classify_branch(branch: str, policy: dict) -> tuple[str, str]:
     if branch in policy["permanent_branches"]:
@@ -79,15 +105,28 @@ def classify_branch(branch: str, policy: dict) -> tuple[str, str]:
     for prefix, config in policy["bounded_prefixes"].items():
         if not branch.startswith(prefix):
             continue
-        suffix = branch[len(prefix):]
-        if not suffix or suffix.startswith("/") or ".." in suffix or any(c.isspace() for c in suffix):
+        suffix = branch[len(prefix) :]
+        if (
+            not suffix
+            or suffix.startswith("/")
+            or ".." in suffix
+            or any(c.isspace() for c in suffix)
+        ):
             return "violation", f"unsafe suffix for {prefix}"
         if config.get("enabled"):
             return "bounded", prefix
         return "future-disabled", prefix
     return "violation", "unknown branch type"
 
-def validate_pr_route(head: str, base: str, actor: str, head_repo: str, repository: str, policy: dict) -> None:
+
+def validate_pr_route(
+    head: str,
+    base: str,
+    actor: str,
+    head_repo: str,
+    repository: str,
+    policy: dict,
+) -> None:
     """Raise PolicyError when a PR violates the authorized graph."""
     if head_repo and head_repo != repository:
         if base != "dev":
@@ -121,6 +160,7 @@ def validate_pr_route(head: str, base: str, actor: str, head_repo: str, reposito
     status, detail = classify_branch(head, policy)
     raise PolicyError(f"PR head is not authorized: {status} ({detail})")
 
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=("validate", "classify", "check", "check-pr"))
@@ -144,7 +184,14 @@ def main() -> int:
         if not args.head or not args.base or not args.repository:
             parser.error("--head, --base and --repository are required for check-pr")
         try:
-            validate_pr_route(args.head, args.base, args.actor, args.head_repo, args.repository, policy)
+            validate_pr_route(
+                args.head,
+                args.base,
+                args.actor,
+                args.head_repo,
+                args.repository,
+                policy,
+            )
         except PolicyError as exc:
             print(f"branch-policy: PR route denied: {exc}", file=sys.stderr)
             return 2
@@ -157,6 +204,7 @@ def main() -> int:
     if args.command == "check" and status in {"violation", "future-disabled"}:
         return 2
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -36,22 +36,30 @@ fi
 
 export SERVER_ID
 
+# Redis is a required runtime dependency once scan execution is moved out of
+# the API process. Fail startup rather than accepting scans into nowhere.
+python3 - <<'PY'
+from scan_queue import assert_queue_available
+
+assert_queue_available()
+PY
+
 # Database schema changes are explicit and versioned. Startup fails closed when
 # the configured PostgreSQL database cannot be migrated.
 alembic upgrade head
 
 python3 - <<'PY'
-from app import app, cleanup_stale_scans
+from app import app, reconcile_stale_scans
 
 with app.app_context():
-    cleanup_stale_scans()
+    reconcile_stale_scans()
 PY
 
 exec gunicorn \
-    --workers 1 \
-    --threads "${GUNICORN_THREADS:-8}" \
+    --workers "${GUNICORN_WORKERS:-2}" \
+    --threads "${GUNICORN_THREADS:-4}" \
     --bind "0.0.0.0:${PORT:-5001}" \
     --timeout "${GUNICORN_TIMEOUT:-300}" \
     --access-logfile - \
     --error-logfile - \
-    app:app
+    server:app

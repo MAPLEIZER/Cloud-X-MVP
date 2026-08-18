@@ -1,171 +1,211 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { Cpu, HardDrive, Wifi, Zap, Activity } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Activity, Cpu, Gauge, HardDrive, MemoryStick, Wifi } from 'lucide-react'
+import { apiClient, type SystemMonitorResponse } from '@/lib/api-client'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
-import type { DataPoint, ResourceData, Agent } from './types'
-import { generateDataPoint, generateInitialData } from './types'
+import type { DataPoint, ResourceData } from './types'
 import { ResourceCard } from './resource-card'
-import { AgentMemoryCard } from './agent-memory-card'
 import { TargetConfigDialog } from './target-config-dialog'
 
-const DEFAULT_AGENTS: Agent[] = [
-    {
-        id: '1',
-        name: 'Network Scanner',
-        memory: generateInitialData(15, 150, 50),
-        color: '#3b82f6',
-    },
-    {
-        id: '2',
-        name: 'Wazuh Agent',
-        memory: generateInitialData(15, 200, 50),
-        color: '#10b981',
-    },
-    {
-        id: '3',
-        name: 'Security Monitor',
-        memory: generateInitialData(15, 80, 50),
-        color: '#f59e0b',
-    },
-    {
-        id: '4',
-        name: 'Threat Detection',
-        memory: generateInitialData(15, 120, 50),
-        color: '#8b5cf6',
-    },
-]
+const MAX_POINTS = 20
+
+function emptyResourceData(): ResourceData {
+    return {
+        cpu: [],
+        memory: [],
+        disk: [],
+        network: [],
+        latency: [],
+    }
+}
+
+function appendPoint(history: DataPoint[], incoming: DataPoint[]) {
+    const point = incoming[0]
+    if (!point) return history
+    return [...history, point].slice(-MAX_POINTS)
+}
+
+function latestValue(history: DataPoint[]) {
+    return history[history.length - 1]?.value ?? 0
+}
+
+function formatBytes(value?: number) {
+    if (value == null || !Number.isFinite(value)) return '—'
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB']
+    let current = value
+    let index = 0
+    while (current >= 1024 && index < units.length - 1) {
+        current /= 1024
+        index += 1
+    }
+    return `${current.toFixed(index === 0 ? 0 : 1)} ${units[index]}`
+}
+
+function formatCollectedAt(value?: string | null) {
+    if (!value) return 'Not reported by source'
+    const date = new Date(value)
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString()
+}
+
+function sourceLabel(snapshot: SystemMonitorResponse | null) {
+    if (!snapshot) return 'No data'
+    if (snapshot.source === 'local_psutil') return 'Local measured'
+    if (snapshot.source === 'wazuh_syscollector') return 'Wazuh snapshot'
+    return 'Agentless latency'
+}
 
 export function SystemMonitor() {
-    const [resourceData, setResourceData] = useState<ResourceData>({
-        cpu: generateInitialData(20, 45, 30),
-        gpu: generateInitialData(20, 35, 25),
-        vram: generateInitialData(20, 60, 20),
-        network: generateInitialData(20, 25, 40),
-        memory: generateInitialData(20, 70, 15),
-    })
-
-    const [agents] = useState<Agent[]>(DEFAULT_AGENTS)
+    const [resourceData, setResourceData] = useState<ResourceData>(emptyResourceData)
+    const [snapshot, setSnapshot] = useState<SystemMonitorResponse | null>(null)
+    const [error, setError] = useState<string | null>(null)
     const [isExpanded, setIsExpanded] = useState(false)
     const [targetSystem, setTargetSystem] = useState(
-        () => localStorage.getItem('cloudx-monitor-target') || '192.168.1.100'
+        () => localStorage.getItem('cloudx-monitor-target') || 'localhost'
     )
     const [tempTarget, setTempTarget] = useState(targetSystem)
     const [isDialogOpen, setIsDialogOpen] = useState(false)
 
     const handleSaveTarget = () => {
-        setTargetSystem(tempTarget)
-        localStorage.setItem('cloudx-monitor-target', tempTarget)
+        const normalized = tempTarget.trim() || 'localhost'
+        setTargetSystem(normalized)
+        setTempTarget(normalized)
+        localStorage.setItem('cloudx-monitor-target', normalized)
         setIsDialogOpen(false)
     }
 
     useEffect(() => {
+        let cancelled = false
+        setResourceData(emptyResourceData())
+        setSnapshot(null)
+        setError(null)
+
         const fetchData = async () => {
             try {
-                const target = targetSystem || 'localhost'
-                const response = await fetch(
-                    `${import.meta.env.VITE_API_BASE_URL}/api/system-monitor?target=${target}`
+                const response = await apiClient.getSystemMonitor(targetSystem)
+                if (cancelled) return
+
+                setSnapshot(response)
+                setError(null)
+                setResourceData((previous) => ({
+                    cpu: appendPoint(previous.cpu, response.cpu),
+                    memory: appendPoint(previous.memory, response.memory),
+                    disk: appendPoint(previous.disk, response.disk),
+                    network: appendPoint(previous.network, response.network),
+                    latency: appendPoint(previous.latency, response.latency),
+                }))
+            } catch (fetchError) {
+                if (cancelled) return
+                setError(
+                    fetchError instanceof Error
+                        ? fetchError.message
+                        : 'Unable to load monitoring metrics'
                 )
-                if (!response.ok) throw new Error('Failed to fetch metrics')
-
-                const newData = await response.json()
-
-                setResourceData((prev) => {
-                    const maxPoints = 20
-
-                    const append = (arr: DataPoint[], val: DataPoint | DataPoint[]) => {
-                        const point = Array.isArray(val) ? val[0] : val
-                        return [...arr, point].slice(-maxPoints)
-                    }
-
-                    if (newData.is_agentless) {
-                        return {
-                            cpu: [
-                                ...prev.cpu,
-                                generateDataPoint(
-                                    prev.cpu[prev.cpu.length - 1]?.value || 45,
-                                    5,
-                                    0.01
-                                ),
-                            ].slice(-maxPoints),
-                            gpu: [
-                                ...prev.gpu,
-                                generateDataPoint(
-                                    prev.gpu[prev.gpu.length - 1]?.value || 35,
-                                    5,
-                                    0.01
-                                ),
-                            ].slice(-maxPoints),
-                            vram: [
-                                ...prev.vram,
-                                generateDataPoint(
-                                    prev.vram[prev.vram.length - 1]?.value || 60,
-                                    5,
-                                    0.01
-                                ),
-                            ].slice(-maxPoints),
-                            network: append(prev.network, newData.network),
-                            memory: [
-                                ...prev.memory,
-                                generateDataPoint(
-                                    prev.memory[prev.memory.length - 1]?.value || 70,
-                                    5,
-                                    0.01
-                                ),
-                            ].slice(-maxPoints),
-                        }
-                    } else {
-                        return {
-                            cpu: append(prev.cpu, newData.cpu),
-                            memory: append(prev.memory, newData.memory),
-                            gpu: [...prev.gpu, generateDataPoint(35, 25, 0.06)].slice(
-                                -maxPoints
-                            ),
-                            vram: [...prev.vram, generateDataPoint(60, 20, 0.05)].slice(
-                                -maxPoints
-                            ),
-                            network: [...prev.network, generateDataPoint(25, 40, 0.1)].slice(
-                                -maxPoints
-                            ),
-                        }
-                    }
-                })
-            } catch {
-                // Silently fail - monitor API may not be available
             }
         }
 
-        const interval = setInterval(fetchData, 2000)
-        return () => clearInterval(interval)
+        void fetchData()
+        const interval = window.setInterval(() => void fetchData(), 5000)
+        return () => {
+            cancelled = true
+            window.clearInterval(interval)
+        }
     }, [targetSystem])
 
-    const currentCpu = resourceData.cpu[resourceData.cpu.length - 1]?.value || 0
-    const currentGpu = resourceData.gpu[resourceData.gpu.length - 1]?.value || 0
-    const currentVram =
-        resourceData.vram[resourceData.vram.length - 1]?.value || 0
-    const currentNetwork =
-        resourceData.network[resourceData.network.length - 1]?.value || 0
-    const currentMemory =
-        resourceData.memory[resourceData.memory.length - 1]?.value || 0
+    const availableCards = useMemo(() => {
+        if (!snapshot) return []
+        const cards = []
+        if (snapshot.availability.cpu) {
+            cards.push(
+                <ResourceCard
+                    key='cpu'
+                    icon={Cpu}
+                    label='CPU'
+                    value={latestValue(resourceData.cpu)}
+                    data={resourceData.cpu}
+                    color='#3b82f6'
+                />
+            )
+        }
+        if (snapshot.availability.memory) {
+            cards.push(
+                <ResourceCard
+                    key='memory'
+                    icon={MemoryStick}
+                    label='Memory'
+                    value={latestValue(resourceData.memory)}
+                    data={resourceData.memory}
+                    color='#ef4444'
+                />
+            )
+        }
+        if (snapshot.availability.disk) {
+            cards.push(
+                <ResourceCard
+                    key='disk'
+                    icon={HardDrive}
+                    label='Disk'
+                    value={latestValue(resourceData.disk)}
+                    data={resourceData.disk}
+                    color='#f59e0b'
+                />
+            )
+        }
+        if (snapshot.availability.network_throughput) {
+            cards.push(
+                <ResourceCard
+                    key='network'
+                    icon={Wifi}
+                    label='Network'
+                    value={latestValue(resourceData.network)}
+                    data={resourceData.network}
+                    color='#8b5cf6'
+                    unit={snapshot.network_unit || 'MiB/s'}
+                />
+            )
+        }
+        if (snapshot.availability.latency) {
+            cards.push(
+                <ResourceCard
+                    key='latency'
+                    icon={Gauge}
+                    label='Latency'
+                    value={latestValue(resourceData.latency)}
+                    data={resourceData.latency}
+                    color='#0ea5e9'
+                    unit='ms'
+                />
+            )
+        }
+        return cards
+    }, [resourceData, snapshot])
 
-    const hasAnySpikes = [
-        ...resourceData.cpu,
-        ...resourceData.gpu,
-        ...resourceData.vram,
-        ...resourceData.network,
-        ...resourceData.memory,
-        ...agents.flatMap((a) => a.memory),
-    ].some((d) => d.isSpike)
+    const hasAnySpikes = Object.values(resourceData)
+        .flat()
+        .some((point) => point.isSpike)
+
+    const unavailable = snapshot
+        ? [
+              ['CPU', snapshot.availability.cpu],
+              ['Memory', snapshot.availability.memory],
+              ['Disk', snapshot.availability.disk],
+              ['Network throughput', snapshot.availability.network_throughput],
+              ['Latency', snapshot.availability.latency],
+              ['GPU', snapshot.availability.gpu],
+              ['VRAM', snapshot.availability.vram],
+          ]
+              .filter(([, available]) => !available)
+              .map(([name]) => name)
+        : []
 
     return (
         <Card className='transition-all duration-300 hover:shadow-lg'>
             <div className='p-4'>
-                {/* Header */}
-                <div className='mb-4 flex items-center justify-between'>
+                <div className='mb-4 flex flex-wrap items-center justify-between gap-3'>
                     <div className='flex items-center gap-3'>
-                        <div
-                            className='flex cursor-pointer items-center gap-2'
-                            onClick={() => setIsExpanded(!isExpanded)}
+                        <button
+                            type='button'
+                            className='flex items-center gap-2 text-left'
+                            onClick={() => setIsExpanded((value) => !value)}
                         >
                             <img
                                 src='/cloud-x logo.png'
@@ -180,7 +220,7 @@ export function SystemMonitor() {
                                     Target: {targetSystem}
                                 </span>
                             </div>
-                        </div>
+                        </button>
 
                         <TargetConfigDialog
                             targetSystem={targetSystem}
@@ -190,120 +230,124 @@ export function SystemMonitor() {
                             onTempTargetChange={setTempTarget}
                             onSave={handleSaveTarget}
                         />
+                    </div>
 
+                    <div className='flex items-center gap-2'>
+                        <Badge variant={snapshot?.is_agentless ? 'secondary' : 'default'}>
+                            {sourceLabel(snapshot)}
+                        </Badge>
                         {hasAnySpikes && (
-                            <motion.div
-                                initial={{ scale: 0 }}
-                                animate={{ scale: 1 }}
-                                transition={{ type: 'spring', stiffness: 400, damping: 10 }}
-                            >
-                                <Badge
-                                    variant='destructive'
-                                    className='animate-pulse px-2 py-1 text-xs text-white'
-                                >
-                                    <Activity className='mr-1 h-3 w-3' />
-                                    High Usage
-                                </Badge>
-                            </motion.div>
+                            <Badge variant='destructive'>
+                                <Activity className='mr-1 h-3 w-3' />
+                                High usage
+                            </Badge>
                         )}
                     </div>
-                    <motion.div
-                        animate={{ rotate: isExpanded ? 180 : 0 }}
-                        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                        className='text-muted-foreground cursor-pointer'
-                        onClick={() => setIsExpanded(!isExpanded)}
-                    >
-                        ▼
-                    </motion.div>
                 </div>
 
-                {/* Main Metrics Grid */}
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    onClick={() => setIsExpanded(!isExpanded)}
-                    className='cursor-pointer'
-                >
-                    <div className='grid grid-cols-2 gap-1.5'>
-                        <ResourceCard
-                            icon={Cpu}
-                            label='CPU'
-                            value={currentCpu}
-                            data={resourceData.cpu}
-                            color='#3b82f6'
-                        />
-                        <ResourceCard
-                            icon={Zap}
-                            label='GPU'
-                            value={currentGpu}
-                            data={resourceData.gpu}
-                            color='#10b981'
-                        />
-                        <ResourceCard
-                            icon={HardDrive}
-                            label='VRAM'
-                            value={currentVram}
-                            data={resourceData.vram}
-                            color='#f59e0b'
-                        />
-                        <ResourceCard
-                            icon={Wifi}
-                            label='Network'
-                            value={currentNetwork}
-                            data={resourceData.network}
-                            color='#8b5cf6'
-                            unit='MB/s'
-                        />
+                {error ? (
+                    <div className='border-destructive/40 bg-destructive/5 text-destructive rounded-md border p-3 text-sm'>
+                        {error}
                     </div>
-                </motion.div>
+                ) : availableCards.length > 0 ? (
+                    <div className='grid grid-cols-1 gap-1.5 sm:grid-cols-2'>
+                        {availableCards}
+                    </div>
+                ) : (
+                    <div className='text-muted-foreground rounded-md border p-3 text-sm'>
+                        {snapshot
+                            ? 'The selected source has no live utilization metric available.'
+                            : 'Loading measured metrics…'}
+                    </div>
+                )}
 
-                {/* Expanded Section */}
-                <AnimatePresence>
-                    {isExpanded && (
-                        <motion.div
-                            initial={{ height: 0, opacity: 0 }}
-                            animate={{ height: 'auto', opacity: 1 }}
-                            exit={{ height: 0, opacity: 0 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                            className='overflow-hidden'
-                        >
-                            <div className='border-t px-3 pb-3'>
-                                <div className='mt-3 mb-2'>
-                                    <ResourceCard
-                                        icon={HardDrive}
-                                        label='System Memory'
-                                        value={currentMemory}
-                                        data={resourceData.memory}
-                                        color='#ef4444'
-                                        unit='GB'
-                                    />
-                                </div>
-
-                                <div className='space-y-1'>
-                                    <span className='text-muted-foreground text-xs font-medium'>
-                                        Per-Agent Memory
-                                    </span>
-                                    {agents.map((agent, index) => (
-                                        <motion.div
-                                            key={agent.id}
-                                            initial={{ x: -20, opacity: 0 }}
-                                            animate={{ x: 0, opacity: 1 }}
-                                            transition={{
-                                                delay: index * 0.1,
-                                                type: 'spring',
-                                                stiffness: 300,
-                                                damping: 30,
-                                            }}
-                                        >
-                                            <AgentMemoryCard agent={agent} />
-                                        </motion.div>
-                                    ))}
+                {isExpanded && snapshot && (
+                    <div className='mt-4 space-y-3 border-t pt-4 text-sm'>
+                        <div className='grid gap-3 sm:grid-cols-2'>
+                            <div>
+                                <div className='text-muted-foreground text-xs'>Metric source</div>
+                                <div className='font-medium'>{sourceLabel(snapshot)}</div>
+                            </div>
+                            <div>
+                                <div className='text-muted-foreground text-xs'>Collected</div>
+                                <div className='font-medium'>
+                                    {formatCollectedAt(snapshot.collected_at)}
                                 </div>
                             </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                        </div>
+
+                        {snapshot.agent && (
+                            <div className='rounded-md border p-3'>
+                                <div className='font-medium'>Managed Wazuh endpoint</div>
+                                <div className='text-muted-foreground mt-1 text-xs'>
+                                    {snapshot.agent.name || snapshot.agent.id} · ID {snapshot.agent.id}
+                                    {snapshot.agent.ip ? ` · ${snapshot.agent.ip}` : ''}
+                                    {snapshot.agent.status ? ` · ${snapshot.agent.status}` : ''}
+                                </div>
+                            </div>
+                        )}
+
+                        {snapshot.source === 'local_psutil' && (
+                            <div className='grid gap-3 sm:grid-cols-2'>
+                                <div>
+                                    <div className='text-muted-foreground text-xs'>Receive</div>
+                                    <div className='font-medium'>
+                                        {(snapshot.network_rx_mbps ?? 0).toFixed(3)} MiB/s
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className='text-muted-foreground text-xs'>Transmit</div>
+                                    <div className='font-medium'>
+                                        {(snapshot.network_tx_mbps ?? 0).toFixed(3)} MiB/s
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {snapshot.network_counters && (
+                            <div className='grid gap-3 sm:grid-cols-2'>
+                                <div>
+                                    <div className='text-muted-foreground text-xs'>Interface RX snapshot</div>
+                                    <div className='font-medium'>
+                                        {formatBytes(snapshot.network_counters.rx_bytes)}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className='text-muted-foreground text-xs'>Interface TX snapshot</div>
+                                    <div className='font-medium'>
+                                        {formatBytes(snapshot.network_counters.tx_bytes)}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {snapshot.hardware?.cpu_name && (
+                            <div className='rounded-md border p-3'>
+                                <div className='font-medium'>{snapshot.hardware.cpu_name}</div>
+                                <div className='text-muted-foreground mt-1 text-xs'>
+                                    {snapshot.hardware.cpu_cores ?? '—'} cores ·{' '}
+                                    {snapshot.hardware.cpu_mhz ?? '—'} MHz inventory snapshot
+                                </div>
+                            </div>
+                        )}
+
+                        {unavailable.length > 0 && (
+                            <div className='text-muted-foreground text-xs'>
+                                Not available from this source: {unavailable.join(', ')}.
+                            </div>
+                        )}
+
+                        <p className='text-muted-foreground text-xs'>{snapshot.note}</p>
+                    </div>
+                )}
+
+                <button
+                    type='button'
+                    onClick={() => setIsExpanded((value) => !value)}
+                    className='text-muted-foreground mt-3 w-full text-center text-xs'
+                >
+                    {isExpanded ? 'Hide metric provenance' : 'Show metric provenance'}
+                </button>
             </div>
         </Card>
     )
