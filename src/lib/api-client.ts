@@ -38,6 +38,16 @@ export interface SyncStatus {
   reason?: string
 }
 
+export interface ClientErrorReport {
+  name?: string
+  message: string
+  stack?: string
+  source: 'window.error' | 'unhandledrejection' | 'manual'
+  path?: string
+  line?: number
+  column?: number
+}
+
 export interface MetricDataPoint {
   value: number
   timestamp: number
@@ -334,6 +344,15 @@ class CloudXApiClient {
     return this.request<SecurityFimRecord[]>(
       `/api/security/fim?agent_id=${encodeURIComponent(agentId)}&limit=${limit}`
     )
+  }
+
+  async reportClientError(
+    payload: ClientErrorReport
+  ): Promise<{ status: string }> {
+    return this.request<{ status: string }>('/api/client-errors', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   }
 
   setBaseURL(url: string): void {
