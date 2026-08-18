@@ -39,16 +39,14 @@ jobs:
       - name: Verify frontend runtime configuration
         run: |
           set -euo pipefail
-          container="cloudx-frontend-${GITHUB_RUN_ID}"
-          cleanup() {
-            docker rm -f "$container" >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-          docker run -d --name "$container" \
-            -e CLOUDX_API_BASE_URL= \
-            -e CLERK_PUBLISHABLE_KEY=pk_test_ci_runtime \
-            frontend:latest >/dev/null
-          config="$(docker exec "$container" cat /usr/share/nginx/html/cloudx-config.js)"
+          config="$(
+            docker run --rm \
+              -e CLOUDX_API_BASE_URL= \
+              -e CLERK_PUBLISHABLE_KEY=pk_test_ci_runtime \
+              --entrypoint sh frontend:latest \
+              -c '/docker-entrypoint.d/10-cloudx-runtime-config.sh && cat /usr/share/nginx/html/cloudx-config.js'
+          )"
+          printf '%s\n' "$config"
           grep -Fq 'apiBaseUrl: ""' <<<"$config"
           grep -Fq 'clerkPublishableKey: "pk_test_ci_runtime"' <<<"$config"
 
