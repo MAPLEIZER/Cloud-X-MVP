@@ -43,12 +43,17 @@ if [[ -z "$COMPOSE_BIN" ]]; then
 fi
 
 # Authentication is deliberately fail-closed. Export these before running:
-#   CLERK_SECRET_KEY
+#   CLERK_JWT_KEY        Clerk instance PEM public key; multiline is accepted.
 #   CLERK_AUTHORIZED_PARTIES
 #   CLERK_ALLOWED_USER_IDS
-require_env CLERK_SECRET_KEY
+# CLERK_SECRET_KEY is not required for request verification.
+require_env CLERK_JWT_KEY
 require_env CLERK_AUTHORIZED_PARTIES
 require_env CLERK_ALLOWED_USER_IDS
+
+# Store the PEM safely in one env-file line. auth.py accepts literal \n escapes
+# and restores the original PEM before signature verification.
+CLERK_JWT_KEY_ESCAPED="${CLERK_JWT_KEY//$'\n'/\\n}"
 
 # Remote deployment is separately fail-closed. An empty JSON object means the
 # API can run but no host is authorized for remote agent deployment.
@@ -166,17 +171,21 @@ PORT=5001
 PRIMARY_NODE_URL=$PRIMARY_NODE_URL
 NODE_ROLE=$NODE_ROLE
 NODE_ID=$NODE_ID
-CLERK_SECRET_KEY=$CLERK_SECRET_KEY
+CLERK_JWT_KEY=$CLERK_JWT_KEY_ESCAPED
 CLERK_AUTHORIZED_PARTIES=$CLERK_AUTHORIZED_PARTIES
 CLERK_ALLOWED_USER_IDS=$CLERK_ALLOWED_USER_IDS
+CLERK_SECRET_KEY=${CLERK_SECRET_KEY:-}
 DEPLOYMENT_TARGET_ALLOWLIST_JSON=$DEPLOYMENT_TARGET_ALLOWLIST_JSON
 ENABLE_WINDOWS_AGENT_DEPLOYMENT=$ENABLE_WINDOWS_AGENT_DEPLOYMENT
 POSTGRES_DB=$POSTGRES_DB
 POSTGRES_USER=$POSTGRES_USER
 POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 DATABASE_URL=$DATABASE_URL
+REDIS_URL=redis://redis:6379/0
 MAX_CONCURRENT_SCANS=${MAX_CONCURRENT_SCANS:-4}
-GUNICORN_THREADS=${GUNICORN_THREADS:-8}
+SCAN_WORKERS=${SCAN_WORKERS:-2}
+GUNICORN_WORKERS=${GUNICORN_WORKERS:-2}
+GUNICORN_THREADS=${GUNICORN_THREADS:-4}
 GUNICORN_TIMEOUT=${GUNICORN_TIMEOUT:-300}
 EOF
 chmod 0600 .env
@@ -204,6 +213,19 @@ services:
       timeout: 5s
       retries: 12
 
+  redis:
+    image: redis:8-alpine
+    container_name: cloudx-redis
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    restart: unless-stopped
+    volumes:
+      - cloudx_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   backend:
     image: $IMAGE
     container_name: cloudx-backend
@@ -224,6 +246,8 @@ $CAP_RAW_BLOCK
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/api/health"]
       interval: 30s
@@ -231,14 +255,35 @@ $CAP_RAW_BLOCK
       retries: 3
       start_period: 20s
 
+  scan-worker:
+    image: $IMAGE
+    restart: unless-stopped
+    env_file:
+      - .env
+    entrypoint: ["rq"]
+    command: ["worker-pool", "scans", "--num-workers", "\${SCAN_WORKERS}", "--url", "\${REDIS_URL}", "--serializer", "json", "--worker-class", "scan_jobs.CloudXWorker"]
+    cap_drop:
+      - ALL
+$CAP_RAW_BLOCK
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   cloudx_data:
   cloudx_postgres_data:
+  cloudx_redis_data:
 EOF
 chmod 0600 docker-compose.yml
 
 $COMPOSE_BIN up -d
 echo "Deployment finished. PostgreSQL credentials are stored in $DATA_DIR/.env (mode 0600)."
+echo "Clerk session verification is networkless and uses CLERK_JWT_KEY from that env file."
+echo "Redis is internal-only in this Compose topology and persists its AOF in a named volume."
 if [[ "$DEPLOYMENT_TARGET_ALLOWLIST_JSON" == "{}" ]]; then
   echo "Remote agent deployment is fail-closed: no deployment targets are currently authorized."
 fi

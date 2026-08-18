@@ -1,0 +1,101 @@
+name: Dependency Security
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
+  pull_request:
+    branches:
+      - main
+      - staging
+      - dev
+      - feature/backend
+      - feature/frontend
+  workflow_dispatch:
+
+jobs:
+  node_audit:
+    name: Audit Node dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Audit pnpm lockfile for high/critical advisories
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -w /workspace \
+            node:24-alpine \
+            sh -ec '
+              npm install --global pnpm@10.34.5 >/dev/null
+              pnpm audit --audit-level high
+            '
+
+  python_audit:
+    name: Audit Python dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Resolve app environment and audit it through OSV
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace:ro" \
+            -w /workspace \
+            python:3.13-slim \
+            sh -ec '
+              python -m venv /tmp/cloudx-audit
+              /tmp/cloudx-audit/bin/python -m pip install \
+                --disable-pip-version-check \
+                --no-cache-dir \
+                --timeout 60 \
+                --retries 5 \
+                -r cloudx-flask-backend/requirements.txt >/dev/null
+
+              python -m pip install \
+                --disable-pip-version-check \
+                --no-cache-dir \
+                --timeout 60 \
+                --retries 5 \
+                pip-audit==2.10.1 >/dev/null
+
+              audit_path=$(/tmp/cloudx-audit/bin/python -c "import site; print(site.getsitepackages()[0])")
+              attempt=1
+              while :; do
+                set +e
+                audit_output=$(pip-audit \
+                  --progress-spinner off \
+                  --vulnerability-service osv \
+                  --timeout 60 \
+                  --ignore-vuln PYSEC-2026-3552 \
+                  --path "$audit_path" 2>&1)
+                audit_code=$?
+                set -e
+
+                printf "%s\n" "$audit_output"
+
+                if [ "$audit_code" -eq 0 ]; then
+                  break
+                fi
+
+                # pip-audit documents exit code 1 for a completed audit that found
+                # vulnerabilities. Do not retry a deterministic security finding.
+                if printf "%s\n" "$audit_output" | grep -q "known vulnerabilit"; then
+                  exit "$audit_code"
+                fi
+
+                if [ "$attempt" -ge 3 ]; then
+                  echo "Python dependency audit could not complete after 3 attempts." >&2
+                  exit "$audit_code"
+                fi
+                attempt=$((attempt + 1))
+                sleep 5
+              done
+            '

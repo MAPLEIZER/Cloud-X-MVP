@@ -47,10 +47,20 @@ class RepositoryHygieneTests(unittest.TestCase):
             "CLERK_ALLOWED_USER_IDS",
             "DEPLOYMENT_TARGET_ALLOWLIST_JSON",
             "DATABASE_URL",
+            "REDIS_URL",
+            "MAX_CONCURRENT_SCANS",
+            "SCAN_WORKERS",
+            "GUNICORN_WORKERS",
             "WAZUH_API_URL",
             "WAZUH_API_USERNAME",
             "WAZUH_API_PASSWORD",
             "WAZUH_API_VERIFY_TLS",
+            "WAZUH_INDEXER_URL",
+            "WAZUH_INDEXER_USERNAME",
+            "WAZUH_INDEXER_PASSWORD",
+            "WAZUH_INDEXER_VERIFY_TLS",
+            "WAZUH_REQUEST_TIMEOUT_SECONDS",
+            "WAZUH_CACHE_TTL_SECONDS",
         )
         for name in required_names:
             with self.subTest(name=name):

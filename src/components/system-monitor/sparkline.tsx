@@ -19,14 +19,18 @@ export function Sparkline({
 }: SparklineProps) {
     const pathRef = useRef<SVGPathElement>(null)
 
-    // Need at least 2 points to draw a line
+    // Need at least 2 measured points to draw a line.
     if (!data || data.length < 2) {
         return <svg width={width} height={height} className='overflow-visible' />
     }
 
+    // Percentage metrics naturally use a 0–100 scale. Throughput/latency can
+    // exceed 100, so grow the scale from the real series instead of clipping or
+    // fabricating a normalized value.
+    const scaleMax = Math.max(100, ...data.map((point) => point.value), 1)
     const points = data.map((point, index) => ({
         x: (index / (data.length - 1)) * width,
-        y: height - (point.value / 100) * height,
+        y: height - (Math.max(0, point.value) / scaleMax) * height,
         isSpike: point.isSpike,
     }))
 
@@ -81,7 +85,6 @@ export function Sparkline({
                 transition={{ duration: 0.8, ease: 'easeOut' }}
             />
 
-            {/* Spike indicators */}
             {points.map((point, index) =>
                 point.isSpike ? (
                     <motion.circle

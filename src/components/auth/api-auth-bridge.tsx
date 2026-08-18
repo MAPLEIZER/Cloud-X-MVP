@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { useAuth } from '@clerk/clerk-react'
 import { apiClient } from '@/lib/api-client'
+import { installClientErrorReporting } from '@/lib/error-reporting'
 
 export function ApiAuthBridge() {
   const { getToken, isLoaded } = useAuth()
@@ -11,8 +12,10 @@ export function ApiAuthBridge() {
     }
 
     apiClient.setTokenProvider(() => getToken())
+    const uninstallErrorReporting = installClientErrorReporting()
 
     return () => {
+      uninstallErrorReporting()
       apiClient.setTokenProvider(null)
     }
   }, [getToken, isLoaded])

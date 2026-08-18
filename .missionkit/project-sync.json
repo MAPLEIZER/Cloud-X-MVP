@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "project_discovery": "repository-linked",
+  "dimensions": {
+    "status": {
+      "label_prefix": "status:",
+      "field_names": ["Status", "Workflow Status"],
+      "cardinality": "one",
+      "aliases": {
+        "planned": ["Planned", "Todo", "To do", "Backlog"],
+        "in-progress": ["In Progress", "Doing", "Active"],
+        "acceptance": ["Acceptance", "In Review", "Review", "In Progress"],
+        "blocked": ["Blocked", "Todo", "To do"],
+        "done": ["Done", "Complete", "Completed", "Closed"]
+      }
+    },
+    "phase": {
+      "label_prefix": "phase:",
+      "field_names": ["Phase"],
+      "cardinality": "one",
+      "aliases": {
+        "0": ["Phase 0"],
+        "1": ["Phase 1"],
+        "2": ["Phase 2"],
+        "3": ["Phase 3"],
+        "4": ["Phase 4"],
+        "5": ["Phase 5"],
+        "roadmap": ["Roadmap"]
+      }
+    },
+    "priority": {
+      "label_prefix": "priority:",
+      "field_names": ["Priority"],
+      "cardinality": "one",
+      "aliases": {
+        "p0": ["P0", "Urgent", "Critical"],
+        "p1": ["P1", "High"],
+        "p2": ["P2", "Medium"],
+        "p3": ["P3", "Low"]
+      }
+    },
+    "pipeline": {
+      "label_prefix": "pipeline:",
+      "field_names": ["Pipeline"],
+      "cardinality": "one",
+      "aliases": {
+        "current": ["Current", "Now"],
+        "next": ["Next", "Up Next"],
+        "later": ["Later", "Future"],
+        "done": ["Done", "Complete"]
+      }
+    },
+    "type": {
+      "label_prefix": "type:",
+      "field_names": ["Type", "Work Type"],
+      "cardinality": "one",
+      "aliases": {}
+    },
+    "area": {
+      "label_prefix": "area:",
+      "field_names": ["Areas", "Area"],
+      "cardinality": "many",
+      "aliases": {
+        "security-engine": ["Security Engine"],
+        "observability": ["Observability"],
+        "dependencies": ["Dependencies"],
+        "repository": ["Repository"],
+        "deployment": ["Deployment"],
+        "release": ["Release"],
+        "agent": ["Agent", "Endpoint Agent"],
+        "ci": ["CI", "CI/CD"],
+        "frontend": ["Frontend"],
+        "backend": ["Backend"]
+      }
+    }
+  },
+  "state_overrides": {
+    "closed": {
+      "status": ["done"],
+      "pipeline": ["done"]
+    }
+  }
+}

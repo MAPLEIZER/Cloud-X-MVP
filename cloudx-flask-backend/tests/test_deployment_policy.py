@@ -27,6 +27,19 @@ class DeploymentPolicyEndpointTests(unittest.TestCase):
     def setUp(self):
         self.client = app.test_client()
 
+        # unittest discovery may import auth.py before this module. Own the
+        # mutable module-level policy explicitly so these tests never depend on
+        # import order or environment left behind by another test module.
+        policy = auth.parse_deployment_target_allowlist(
+            '{"user:user_ci":["10.20.30.0/24"],"org:org_ci":["192.0.2.50"]}'
+        )
+        policy_patcher = patch.object(auth, "DEPLOYMENT_TARGET_ALLOWLIST", policy)
+        windows_patcher = patch.object(auth, "WINDOWS_AGENT_DEPLOYMENT_ENABLED", False)
+        policy_patcher.start()
+        windows_patcher.start()
+        self.addCleanup(policy_patcher.stop)
+        self.addCleanup(windows_patcher.stop)
+
     @staticmethod
     def _auth_state(payload=None):
         return SimpleNamespace(

@@ -8,6 +8,9 @@ on:
   pull_request:
     branches: [dev, staging, main]
     types: [opened, synchronize, reopened, edited, ready_for_review]
+  pull_request_target:
+    branches: [dev]
+    types: [closed]
   push:
     branches:
       - '**'
@@ -17,6 +20,7 @@ on:
 
 jobs:
   policy:
+    if: github.event_name != 'pull_request_target'
     name: Branch Policy Enforcement
     runs-on: ubuntu-latest
     steps:
@@ -44,28 +48,129 @@ jobs:
         env:
           BRANCH: ${{ github.ref_name }}
         run: python3 scripts/ci/branch_policy.py check "$BRANCH"
-      - name: Audit permanent branches
+      - name: Audit branch inventory
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
+          owner="${REPOSITORY%%/*}"
           branches="$(curl --fail --silent --show-error \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/$REPOSITORY/branches?per_page=100" | jq -r '.[].name')"
+
           for required in main staging dev feature/backend feature/frontend; do
             grep -Fxq "$required" <<<"$branches" || {
               echo "::error::Missing permanent branch: $required"
               exit 1
             }
           done
+
+          violations=0
           while IFS= read -r branch; do
             case "$branch" in
-              main|staging|dev|feature/backend|feature/frontend|dependabot/*) ;;
+              main|staging|dev|feature/backend|feature/frontend)
+                ;;
+              dependabot/*)
+                open_count="$(curl --fail --silent --show-error --get \
+                  -H "Authorization: Bearer $GH_TOKEN" \
+                  -H "Accept: application/vnd.github+json" \
+                  --data-urlencode "state=open" \
+                  --data-urlencode "base=dev" \
+                  --data-urlencode "head=$owner:$branch" \
+                  "https://api.github.com/repos/$REPOSITORY/pulls" | jq 'length')"
+                if [ "$open_count" -eq 0 ]; then
+                  echo "::error::Orphaned bounded branch has no open PR: $branch"
+                  violations=1
+                fi
+                ;;
               *)
-                echo "::warning::Legacy/nonconforming branch remains: $branch (cleanup is report-only; no automatic deletion)"
+                echo "::error::Unauthorized branch exists: $branch"
+                violations=1
                 ;;
             esac
           done <<<"$branches"
+
+          exit "$violations"
+
+  cleanup:
+    name: Bounded Branch Cleanup
+    if: >-
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       startsWith(github.event.pull_request.head.ref, 'dependabot/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - name: Remove orphaned Dependabot branches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          CLOSED_HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          owner="${REPOSITORY%%/*}"
+
+          delete_if_orphaned() {
+            branch="$1"
+            case "$branch" in
+              main|staging|dev|feature/backend|feature/frontend)
+                echo "Refusing to delete permanent branch: $branch"
+                return 0
+                ;;
+              dependabot/*) ;;
+              *)
+                echo "Skipping non-Dependabot branch: $branch"
+                return 0
+                ;;
+            esac
+
+            open_count="$(curl --fail --silent --show-error --get \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              --data-urlencode "state=open" \
+              --data-urlencode "base=dev" \
+              --data-urlencode "head=$owner:$branch" \
+              "https://api.github.com/repos/$REPOSITORY/pulls" | jq 'length')"
+
+            if [ "$open_count" -ne 0 ]; then
+              echo "Keeping bounded branch with open PR: $branch"
+              return 0
+            fi
+
+            encoded_ref="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote("heads/" + sys.argv[1], safe=""))' "$branch")"
+            status="$(curl --silent --show-error --output /tmp/delete-ref.json --write-out '%{http_code}' \
+              -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPOSITORY/git/refs/$encoded_ref")"
+            if [ "$status" != "204" ] && [ "$status" != "422" ]; then
+              cat /tmp/delete-ref.json >&2 || true
+              echo "::error::Failed to delete orphaned branch $branch (HTTP $status)"
+              return 1
+            fi
+            echo "Deleted orphaned bounded branch: $branch"
+          }
+
+          if [ "$EVENT_NAME" = "pull_request_target" ]; then
+            delete_if_orphaned "$CLOSED_HEAD"
+            exit 0
+          fi
+
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPOSITORY/branches?per_page=100" \
+            | jq -r '.[].name' \
+            | while IFS= read -r branch; do
+                case "$branch" in
+                  dependabot/*) delete_if_orphaned "$branch" ;;
+                esac
+              done
