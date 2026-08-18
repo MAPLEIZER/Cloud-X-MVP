@@ -15,6 +15,7 @@ TEMPLATE_DIR = ROOT / "deploy" / "appliance"
 
 SEMVER = re.compile(r"^v?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 DIGEST_REF = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,6 +29,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--postgres-image", required=True)
     parser.add_argument("--redis-image", required=True)
     parser.add_argument("--nginx-image", required=True)
+    parser.add_argument("--repository", required=True)
+    parser.add_argument("--signer-workflow", required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args()
 
@@ -55,6 +58,12 @@ def sha256_file(path: Path) -> str:
 def main() -> int:
     args = parse_args()
     version = normalized_version(args.version)
+    if not REPOSITORY.fullmatch(args.repository):
+        raise ValueError("repository must be owner/name")
+    expected_workflow = f"github.com/{args.repository}/.github/workflows/release.yml"
+    if args.signer_workflow != expected_workflow:
+        raise ValueError(f"signer-workflow must be {expected_workflow}")
+
     images = {
         "frontend": validate_digest_ref("frontend-image", args.frontend_image),
         "backend": validate_digest_ref("backend-image", args.backend_image),
@@ -88,7 +97,16 @@ def main() -> int:
     (output / "compose.yaml").write_text(compose, encoding="utf-8")
     shutil.copy2(TEMPLATE_DIR / "nginx.conf.template", output / "nginx.conf.template")
     shutil.copy2(TEMPLATE_DIR / ".env.example", output / ".env.example")
-    for script in ("install.sh", "verify.sh", "upgrade.sh", "rollback.sh"):
+    scripts = (
+        "install.sh",
+        "verify.sh",
+        "verify-attestations.sh",
+        "host-preflight.sh",
+        "sync-tls.sh",
+        "upgrade.sh",
+        "rollback.sh",
+    )
+    for script in scripts:
         target = output / "scripts" / script
         shutil.copy2(TEMPLATE_DIR / "scripts" / script, target)
         target.chmod(0o755)
@@ -102,8 +120,13 @@ def main() -> int:
         },
         "supported_architectures": ["linux/amd64"],
         "runtime_requirements": {
+            "validated_pilot_host": "Ubuntu 24.04 LTS x86_64",
+            "minimum_vcpu": 4,
+            "minimum_memory_gib": 8,
+            "minimum_free_disk_gib": 40,
             "docker_engine": "supported current Docker Engine",
             "docker_compose": "Compose v2",
+            "host_preflight": "scripts/host-preflight.sh",
         },
         "compatibility": {
             "manifest": None,
@@ -116,10 +139,17 @@ def main() -> int:
         "endpoint_artifacts": {},
         "images": images,
         "evidence": {
-            "oci_sbom": "attached to Cloud-X OCI image attestations",
-            "oci_provenance": "attached to Cloud-X OCI image attestations",
+            "oci_sbom": "BuildKit SBOM attestation attached to each Cloud-X OCI image",
+            "oci_provenance": "GitHub artifact attestation attached to each Cloud-X OCI image and pushed to the registry",
             "release_checksums": "SHA256SUMS",
-            "signature_policy": "pending #28 release-signing acceptance",
+            "signature_policy": {
+                "type": "github-artifact-attestation",
+                "repository": args.repository,
+                "signer_workflow": args.signer_workflow,
+                "oidc_issuer": "https://token.actions.githubusercontent.com",
+                "operator_verifier": "scripts/verify-attestations.sh",
+                "archive_attestation": "published beside the appliance archive in the GitHub prerelease",
+            },
         },
     }
     manifest_path = output / "manifests" / "release.json"
@@ -130,7 +160,7 @@ def main() -> int:
         output / "nginx.conf.template",
         output / ".env.example",
         manifest_path,
-        *(output / "scripts" / name for name in ("install.sh", "verify.sh", "upgrade.sh", "rollback.sh")),
+        *(output / "scripts" / name for name in scripts),
     ]
     lines = []
     for path in checksum_targets:

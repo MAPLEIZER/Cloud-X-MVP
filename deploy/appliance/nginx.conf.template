@@ -1,12 +1,12 @@
 server {
     listen 80;
-    server_name _;
+    server_name ${CLOUDX_PUBLIC_HOSTNAME};
     return 308 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name _;
+    server_name ${CLOUDX_PUBLIC_HOSTNAME};
 
     ssl_certificate /etc/cloudx/tls/fullchain.pem;
     ssl_certificate_key /etc/cloudx/tls/privkey.pem;
