@@ -74,7 +74,6 @@ jobs:
                   --progress-spinner off \
                   --vulnerability-service osv \
                   --timeout 60 \
-                  --ignore-vuln PYSEC-2026-3552 \
                   --path "$audit_path" 2>&1)
                 audit_code=$?
                 set -e
