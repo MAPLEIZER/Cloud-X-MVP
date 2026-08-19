@@ -140,7 +140,7 @@ Legend: **✅ implemented** · **🟡 implementation exists; acceptance/integrat
 | MSP customer/site workflow | 🧭 | Phase 3 after reliable endpoint onboarding |
 
 > [!NOTE]
-> The Python security gate currently contains **one exact, time-bounded upstream-blocked exception** for `PYSEC-2026-3552`, tracked in [#99](https://github.com/MAPLEIZER/Cloud-X-MVP/issues/99). All other discovered Python vulnerabilities remain blocking.
+> Python dependency auditing is waiver-free: known vulnerabilities remain blocking in ordinary dependency CI and in the release-time audit.
 
 ## 🧩 Product ownership boundary
 
